@@ -10,8 +10,13 @@
 const char* DEVICE_NAME = "HandleIt Hub";
 
 const char* PERIPHERAL_NAME = "HandleIt Client";
-const char* uuidOfService = "0000181a-0000-1000-8000-00805f9b34fb";
-const char* uuidOfVolts = "00002A58-0000-1000-8000-00805f9b34fb";
+const char* SENSOR_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fb";
+const char* VOLT_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fb";
+
+const char* HUB_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fc";
+const char* SENSOR_VOLTS_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fc";
+BLEService hubService = BLEService(HUB_SERVICE_UUID);
+BLEIntCharacteristic sensorVolts(SENSOR_VOLTS_CHARACTERISTIC_UUID, BLERead | BLEWrite | BLEWriteWithoutResponse | BLEIndicate | BLEBroadcast);
 
 BLEDevice peripheral;
 bool isScanning = false;
@@ -41,13 +46,12 @@ void analogWriteRGB(u_int8_t r, u_int8_t g, u_int8_t b) {
 
 void onBLEConnected(BLEDevice d) {
   Serial.println(">>> BLEConnected");
-  digitalWrite(LED_BUILTIN, HIGH);
   if(d.deviceName() != PERIPHERAL_NAME) {
     phone = &d;
     pairingStartTime = 0;
     BLE.stopAdvertise();
     isAdvertising = false;
-    analogWriteRGB(10, 100, 0);
+    digitalWrite(LED_BUILTIN, HIGH);
   }
 }
 void onBLEDisconnected(BLEDevice d) {
@@ -73,13 +77,12 @@ void setup() {
     while (1);
   }
   Serial.println("Booting...");
+  // BLE service to advertise to phone
   BLE.setLocalName(DEVICE_NAME);
-  // TODO add a service to advertise sensor data to phone
-  // BLE.setAdvertisedService(forceService);
-  // forceService.addCharacteristic(rxChar);
-  // forceService.addCharacteristic(volts);
-  // BLE.addService(forceService);
-  // volts.writeValue(30);
+  BLE.setAdvertisedService(hubService);
+  hubService.addCharacteristic(sensorVolts);
+  BLE.addService(hubService);
+  sensorVolts.writeValue(0);
 
   // Bluetooth LE connection handlers
   BLE.setEventHandler(BLEConnected, onBLEConnected);
@@ -88,6 +91,9 @@ void setup() {
 }
 
 void CheckInput() {
+  
+  // sensorVolts.writeValue(millis() / 1000 % 20);
+
   bool pressingPairButton = digitalRead(D8) == HIGH;
   if(!pressingPairButton) {
     pairButtonHoldStartTime = 0;
@@ -104,7 +110,7 @@ void CheckInput() {
 }
 
 void PairToPhone() {
-  if(millis() > pairingStartTime + 30000) {
+  if(millis() > pairingStartTime + 60000) {
     // pairing timed out
     pairingStartTime = 0;
     BLE.stopAdvertise();
@@ -169,20 +175,20 @@ void ConnectToFoundSensor() {
   Serial.print("Appearance: ");
   Serial.println(peripheral.appearance());
   Serial.print("Has force service: ");
-  Serial.println(peripheral.hasService(uuidOfService));
+  Serial.println(peripheral.hasService(SENSOR_SERVICE_UUID));
   Serial.print("Discover the force: ");
-  Serial.println(peripheral.discoverService(uuidOfService));
+  Serial.println(peripheral.discoverService(SENSOR_SERVICE_UUID));
 }
 
 void MonitorSensor() {
   if(!volts) {
     // this was the first call to start monitoring
-    BLEService forceService = peripheral.service(uuidOfService);
-    bool hasVolts = forceService.hasCharacteristic(uuidOfVolts);
+    BLEService forceService = peripheral.service(SENSOR_SERVICE_UUID);
+    bool hasVolts = forceService.hasCharacteristic(VOLT_CHARACTERISTIC_UUID);
     Serial.print("Has volts: ");
     Serial.println(hasVolts);
     if(!hasVolts) return;
-    volts = forceService.characteristic(uuidOfVolts);
+    volts = forceService.characteristic(VOLT_CHARACTERISTIC_UUID);
     Serial.print("Characteristic value length: ");
     Serial.println(volts.valueLength());
     Serial.print("Characteristic descriptor: ");
@@ -195,6 +201,11 @@ void MonitorSensor() {
   if(volts.canRead()) {
     int32_t voltage = 0;
     volts.readValue(voltage);
+    // if(sensorVolts.canWrite()) {
+      sensorVolts.writeValue(voltage);
+    // } else {
+    //   Serial.println("Missing permissions to write");
+    // }
     if(alarmTriggered) {
       if(millis() / 1000 % 2) digitalWrite(D4, HIGH);
       else digitalWrite(D4, LOW);
