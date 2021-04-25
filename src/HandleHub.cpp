@@ -1,10 +1,10 @@
 #include <ArduinoBLE.h>
+#include <./conf.cpp>
 #define RGB_R  9
 #define RGB_G  3
 #define RGB_B  2
 #define D8 8
 #define D4  4
-
 
 // Device name
 const char* DEVICE_NAME = "HandleIt Hub";
@@ -69,7 +69,9 @@ void setup() {
 
   analogWriteRGB(0, 0, 0);
   Serial.begin(9600);
-  // while(!Serial);
+  while(!Serial);
+  Serial1.begin(9600);
+  while(!Serial1);
    // begin BLE initialization
   if (!BLE.begin()) {
     Serial.println("starting BLE failed!");
@@ -88,6 +90,128 @@ void setup() {
   BLE.setEventHandler(BLEConnected, onBLEConnected);
   BLE.setEventHandler(BLEDisconnected, onBLEDisconnected);
   BLE.stopAdvertise();
+}
+
+// AT+SAPBR=3,1,"Contype","GPRS"
+// OK
+// AT+SAPBR=1,1
+// OK
+// AT+HTTPINIT
+// OK
+// AT+HTTPPARA="CID",1
+// OK
+// AT+HTTPPARA="URL","http://thisshould.behidden.com"
+// OK
+// AT+HTTPPARA="CONTENT","application/json"
+// OK
+// AT+HTTPDATA=120,5000
+// DOWNLOAD
+
+// OK
+// AT+HTTPACTION=1
+// OK
+
+// +HTTPACTION: 1,200,27
+// AT+HTTPREAD
+// +HTTPREAD: 27
+// {"data":{"user":{"id":1}}}
+
+// OK
+// AT+HTTPTERM
+// OK
+// AT+SAPBR=0,1
+// OK
+
+void SendRequest() {
+  Serial.write("Sending request\n");
+
+  char urlCommand[sizeof API_URL + 30];
+  sprintf(urlCommand, "AT+HTTPPARA=\"URL\",\"%s\"\n", API_URL);
+
+  char query[120] = "{\"query\":\"query GetUsers{user(where:{email:\\\"steve@hotmail.com\\\"}){id}}\",\"variables\":{}}\n";
+  size_t queryLen = strlen(query);
+  char lenCommand[50];
+  sprintf(lenCommand, "AT+HTTPDATA=%d,%d\n", queryLen, 5000);
+
+  char* commands[] = {
+    "AT+SAPBR=3,1,\"Contype\",\"GPRS\"\n",
+    "AT+SAPBR=1,1\n",
+    "AT+HTTPINIT\n",
+    "AT+HTTPPARA=\"CID\",1\n",
+    urlCommand,
+    "AT+HTTPPARA=\"CONTENT\",\"application/json\"\n",
+    lenCommand,
+    "AT+HTTPACTION=1\n",
+    "AT+HTTPREAD\n",
+    "AT+HTTPTERM\n",
+    "AT+SAPBR=0,1\n",
+  };
+  char buffer[500];
+  char response[200];
+  int size = 0;
+  char log[300];
+  unsigned int commandsLen = sizeof commands / sizeof *commands;
+  unsigned long timeout;
+  Serial.print("Commands to iterate through: ");
+  Serial.println(commandsLen);
+  for(uint8_t i = 0; i < commandsLen; i++) {
+    Serial1.write(commands[i]);
+    Serial1.flush();
+    if(i == 6) { // send query to HTTPDATA command
+      delay(200);
+      Serial1.write(query);
+      Serial1.flush();
+    }
+    timeout = millis() + 10000;
+    while(millis() < timeout) {
+      if(Serial1.available() < 1) continue;
+      buffer[size] = Serial1.read();
+      Serial.write(buffer[size]);
+      size++;
+      if(size >= 6
+        && buffer[size - 1] == 10 
+        && buffer[size - 2] == 13
+        && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K' // OK
+      ) {
+        if(i == 7) { // special case for AT+HTTPACTION response responding OK before query resolve :/
+          while(Serial1.available() < 1 && millis() < timeout);
+          while(Serial1.available() > 0 && millis() < timeout) {
+            buffer[size] = Serial1.read();
+            Serial.write(buffer[size]);
+            size++;
+          }
+        }
+        buffer[size] = '\0';
+        sprintf(
+          log,
+          "\nBuffer is \"%s\"\nSize of buffer is %d, last 6 characters are %i, %i, %i, %i, %i, and %i.\n", 
+          buffer, 
+          strlen(buffer),
+          buffer[size - 5],
+          buffer[size - 4],
+          buffer[size - 3],
+          buffer[size - 2],
+          buffer[size - 1],
+          buffer[size]);
+        Serial.write(log);
+        if(i == 8) { // extract the response
+          int16_t responseIdxStart = -1;
+          for(int idx = 0; idx < size - 7; idx++) {
+            if(responseIdxStart == -1 && buffer[idx] == '{') responseIdxStart = idx;
+            if(responseIdxStart > -1) response[idx - responseIdxStart] = buffer[idx];
+            if(idx == size - 8) response[idx - responseIdxStart + 1] = '\0';
+          }
+          Serial.print("Response is: ");
+          Serial.println(response);
+        }
+        break;
+      }
+    }
+    memset(buffer, 0, 500);
+    memset(log, 0, 300);
+    size = 0;
+  }
+  Serial.println("Request complete");
 }
 
 void CheckInput() {
