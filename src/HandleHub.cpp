@@ -54,6 +54,7 @@ void onBLEConnected(BLEDevice d) {
     digitalWrite(LED_BUILTIN, HIGH);
   }
 }
+
 void onBLEDisconnected(BLEDevice d) {
   Serial.println(">>> BLEDisconnected");
   digitalWrite(LED_BUILTIN, LOW);
@@ -250,14 +251,13 @@ void ScanForSensor() {
   }
   BLEDevice scannedDevice = BLE.available();
   Serial.print(".");
-  bool available = scannedDevice.deviceName() == PERIPHERAL_NAME || scannedDevice.localName() == PERIPHERAL_NAME;
-  if (!available) return;
+  bool isPeripheral = scannedDevice.deviceName() == PERIPHERAL_NAME || scannedDevice.localName() == PERIPHERAL_NAME;
+  if (!isPeripheral) return;
 
   // We found a Sensor!
   peripheral = scannedDevice;
   analogWriteRGB(255, 30, 0);
-  Serial.print("\nDEVICE FOUND");
-  Serial.println(available);
+  Serial.println("\nPERIPHERAL FOUND");
   Serial.print("Address found: ");
   Serial.println(peripheral.address());
   Serial.print("Local Name: ");
@@ -275,7 +275,7 @@ void ScanForSensor() {
 void ConnectToFoundSensor() {
   if(!peripheral.connect()) {
     analogWriteRGB(255, 0, 0);
-    Serial.println("Failed to connect retrying....");
+    Serial.println("\nFailed to connect retrying....");
     delay(1000);
     return;
   }
@@ -319,6 +319,7 @@ void MonitorSensor() {
     // } else {
     //   Serial.println("Missing permissions to write");
     // }
+    // TODO rework alarm triggering and add confirmation to sensor read
     if(alarmTriggered) {
       if(millis() / 1000 % 2) digitalWrite(D4, HIGH);
       else digitalWrite(D4, LOW);
