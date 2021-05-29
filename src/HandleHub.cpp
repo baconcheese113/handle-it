@@ -1,4 +1,5 @@
 #include <ArduinoBLE.h>
+#include <ArduinoJson.h>
 #include <./conf.cpp>
 #define RGB_R  9
 #define RGB_G  3
@@ -6,6 +7,8 @@
 #define D8 8
 #define D4  4
 
+// Serial number
+const char* DEVICE_SERIAL = "RealSensorSerial0";
 // Device name
 const char* DEVICE_NAME = "HandleIt Hub";
 
@@ -15,8 +18,11 @@ const char* VOLT_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fb";
 
 const char* HUB_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fc";
 const char* SENSOR_VOLTS_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fc";
+const char* USER_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fd";
+
 BLEService hubService = BLEService(HUB_SERVICE_UUID);
-BLEIntCharacteristic sensorVolts(SENSOR_VOLTS_CHARACTERISTIC_UUID, BLERead | BLEWrite | BLEWriteWithoutResponse | BLEIndicate | BLEBroadcast);
+BLEIntCharacteristic sensorVoltsChar(SENSOR_VOLTS_CHARACTERISTIC_UUID, BLERead | BLEWrite | BLEWriteWithoutResponse | BLEIndicate | BLEBroadcast);
+BLELongCharacteristic userChar(USER_CHARACTERISTIC_UUID, BLERead | BLEWrite);
 
 BLEDevice peripheral;
 bool isScanning = false;
@@ -44,55 +50,9 @@ void analogWriteRGB(u_int8_t r, u_int8_t g, u_int8_t b) {
   analogWrite(RGB_B, b / divisor);
 }
 
-void onBLEConnected(BLEDevice d) {
-  Serial.println(">>> BLEConnected");
-  if(d.deviceName() != PERIPHERAL_NAME) {
-    phone = &d;
-    pairingStartTime = 0;
-    BLE.stopAdvertise();
-    isAdvertising = false;
-    digitalWrite(LED_BUILTIN, HIGH);
-  }
-}
 
-void onBLEDisconnected(BLEDevice d) {
-  Serial.println(">>> BLEDisconnected");
-  digitalWrite(LED_BUILTIN, LOW);
-  if(d.deviceName() != PERIPHERAL_NAME) {
-    phone = NULL;
-  }
-}
-
-void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(D4, OUTPUT);
-  pinMode(D8, INPUT);
-
-  analogWriteRGB(0, 0, 0);
-  Serial.begin(9600);
-  while(!Serial);
-  Serial1.begin(9600);
-  while(!Serial1);
-   // begin BLE initialization
-  if (!BLE.begin()) {
-    Serial.println("starting BLE failed!");
-
-    while (1);
-  }
-  Serial.println("Booting...");
-  // BLE service to advertise to phone
-  BLE.setLocalName(DEVICE_NAME);
-  BLE.setAdvertisedService(hubService);
-  hubService.addCharacteristic(sensorVolts);
-  BLE.addService(hubService);
-  sensorVolts.writeValue(0);
-
-  // Bluetooth LE connection handlers
-  BLE.setEventHandler(BLEConnected, onBLEConnected);
-  BLE.setEventHandler(BLEDisconnected, onBLEDisconnected);
-  BLE.stopAdvertise();
-}
-
+// https://robu.in/sim800l-interfacing-with-arduino/
+// https://github.com/stephaneAG/SIM800L
 // AT+SAPBR=3,1,"Contype","GPRS"
 // OK
 // AT+SAPBR=1,1
@@ -107,16 +67,13 @@ void setup() {
 // OK
 // AT+HTTPDATA=120,5000
 // DOWNLOAD
-
 // OK
 // AT+HTTPACTION=1
 // OK
-
 // +HTTPACTION: 1,200,27
 // AT+HTTPREAD
 // +HTTPREAD: 27
 // {"data":{"user":{"id":1}}}
-
 // OK
 // AT+HTTPTERM
 // OK
@@ -125,17 +82,17 @@ void setup() {
 
 char buffer[500];
 
-char* SendRequest(char* query) {
+StaticJsonDocument<400> SendRequest(char* query) {
   Serial.write("Sending request\n");
 
-  char urlCommand[sizeof API_URL + 30];
+  char urlCommand[30 + strlen(API_URL)];
   sprintf(urlCommand, "AT+HTTPPARA=\"URL\",\"%s\"\n", API_URL);
 
   size_t queryLen = strlen(query);
-  char lenCommand[25];
+  char lenCommand[30];
   sprintf(lenCommand, "AT+HTTPDATA=%d,%d\n", queryLen, 5000);
 
-  char* commands[] = {
+  static const char* const commands[] = {
     "AT+SAPBR=3,1,\"Contype\",\"GPRS\"\n",
     "AT+SAPBR=1,1\n",
     "AT+HTTPINIT\n",
@@ -198,16 +155,95 @@ char* SendRequest(char* query) {
       }
     }
   }
-  Serial.println("Request complete");
-  Serial.print("Response is: ");
+  Serial.print("Request complete\nResponse is: ");
   Serial.println(response);
-  return response;
+
+  StaticJsonDocument<400> doc;
+  DeserializationError error = deserializeJson(doc, response);
+  if (error) {
+    Serial.print("deserializeJson() failed: ");
+    Serial.println(error.f_str());
+  }
+  return doc;
+}
+
+void onBLEConnected(BLEDevice d) {
+  Serial.println(">>> BLEConnected");
+  if(d.deviceName() != PERIPHERAL_NAME) {
+    phone = &d;
+    pairingStartTime = 0;
+    BLE.stopAdvertise();
+    isAdvertising = false;
+    digitalWrite(LED_BUILTIN, HIGH);
+    // Grab access_token from userId of connected phone
+    int32_t userIdValue = -1;
+    Serial.println("Trying to read userid...");
+    while(userIdValue < 1) {
+      // Required to allow the phone to finish connecting properly
+      BLE.available();
+      userChar.readValue(userIdValue);
+      Serial.print(".");
+      delay(100);
+    }
+    Serial.print("\nUserID value: ");
+    Serial.println(userIdValue);
+    char mutationStr[100 + sizeof userIdValue + strlen(DEVICE_SERIAL)];
+    sprintf(mutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
+    StaticJsonDocument<400> doc = SendRequest(mutationStr);
+    if(doc["data"] && doc["data"]["loginAsHub"]) {
+      const char* token = (const char*)(doc["data"]["loginAsHub"]);
+      Serial.print("token is: ");
+      Serial.println(token);
+      // TODO check if token is different from existing token in flash storage, if so replace it
+      // cmaglie/FlashStorage
+    } else {
+      Serial.println("Error reading token");
+    }
+  }
+}
+
+void onBLEDisconnected(BLEDevice d) {
+  Serial.println(">>> BLEDisconnected");
+  digitalWrite(LED_BUILTIN, LOW);
+  if(d.deviceName() != PERIPHERAL_NAME) {
+    phone = NULL;
+  }
+}
+
+void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(D4, OUTPUT);
+  pinMode(D8, INPUT);
+
+  analogWriteRGB(0, 0, 0);
+  Serial.begin(9600);
+  while(!Serial);
+  Serial1.begin(9600);
+  while(!Serial1);
+   // begin BLE initialization
+  if (!BLE.begin()) {
+    Serial.println("starting BLE failed!");
+
+    while (1);
+  }
+  Serial.println("Booting...");
+  // BLE service to advertise to phone
+  BLE.setLocalName(DEVICE_NAME);
+  BLE.setAdvertisedService(hubService);
+  hubService.addCharacteristic(sensorVoltsChar);
+  hubService.addCharacteristic(userChar);
+  BLE.addService(hubService);
+  sensorVoltsChar.writeValue(0);
+  userChar.writeValue(0);
+
+  // Bluetooth LE connection handlers
+  BLE.setEventHandler(BLEConnected, onBLEConnected);
+  BLE.setEventHandler(BLEDisconnected, onBLEDisconnected);
+  BLE.stopAdvertise();
 }
 
 void CheckInput() {
   
-  // sensorVolts.writeValue(millis() / 1000 % 20);
-
   bool pressingPairButton = digitalRead(D8) == HIGH;
   if(!pressingPairButton) {
     pairButtonHoldStartTime = 0;
@@ -239,6 +275,8 @@ void PairToPhone() {
     BLE.advertise();
     isAdvertising = true;  
   }
+  // Must be called while pairing so characteristics are available
+  BLE.available();
 }
 
 void ScanForSensor() {
@@ -314,8 +352,8 @@ void MonitorSensor() {
   if(volts.canRead()) {
     int32_t voltage = 0;
     volts.readValue(voltage);
-    // if(sensorVolts.canWrite()) {
-      sensorVolts.writeValue(voltage);
+    // if(sensorVoltsChar.canWrite()) {
+      sensorVoltsChar.writeValue(voltage);
     // } else {
     //   Serial.println("Missing permissions to write");
     // }
@@ -343,16 +381,21 @@ void loop() {
   // Hub has entered pairing mode
   if(pairingStartTime > 0) {
     PairToPhone();
+  } else if(phone) {
+    // Required so that services can be read for some reason
+    // FIXME - https://github.com/arduino-libraries/ArduinoBLE/issues/175
+    BLE.available();
   }
 
   // Scan for peripheral
-  if(!peripheral) {
-    ScanForSensor();
-  } else if (!peripheral.connected()) {
-    ConnectToFoundSensor();
-  } else {
-    MonitorSensor();
-  }
+  // if(!peripheral) {
+  //   ScanForSensor();
+  // } 
+  // else if (!peripheral.connected()) {
+  //   ConnectToFoundSensor();
+  // } else {
+  //   MonitorSensor();
+  // }
 
   // debugging is a bit crazy 
   if(Serial.availableForWrite()) {
