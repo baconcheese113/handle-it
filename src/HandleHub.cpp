@@ -36,6 +36,8 @@ unsigned long pairingStartTime = 0;
 unsigned long pairButtonHoldStartTime = 0;
 BLEDevice* phone;
 
+const char* accessToken;
+
 
 void analogWriteRGB(u_int8_t r, u_int8_t g, u_int8_t b) {
   Serial.print("Writing rgb value: ");
@@ -191,9 +193,9 @@ void onBLEConnected(BLEDevice d) {
     sprintf(mutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
     StaticJsonDocument<400> doc = SendRequest(mutationStr);
     if(doc["data"] && doc["data"]["loginAsHub"]) {
-      const char* token = (const char*)(doc["data"]["loginAsHub"]);
+      accessToken = (const char*)(doc["data"]["loginAsHub"]);
       Serial.print("token is: ");
-      Serial.println(token);
+      Serial.println(accessToken);
       // TODO check if token is different from existing token in flash storage, if so replace it
       // cmaglie/FlashStorage
     } else {
