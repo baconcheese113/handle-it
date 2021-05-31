@@ -1,10 +1,10 @@
 #include <ArduinoBLE.h>
 #include <ArduinoJson.h>
-#include <./conf.cpp>
 #include <./hub/Utilities.h>
+#include <./hub/Network.h>
 
 #define D8 8
-#define D4  4
+#define D4 4
 
 // Serial number
 const char* DEVICE_SERIAL = "RealSensorSerial0";
@@ -35,123 +35,7 @@ unsigned long pairingStartTime = 0;
 unsigned long pairButtonHoldStartTime = 0;
 BLEDevice* phone;
 
-const char* accessToken;
-
-// https://robu.in/sim800l-interfacing-with-arduino/
-// https://github.com/stephaneAG/SIM800L
-// AT+SAPBR=3,1,"Contype","GPRS"
-// OK
-// AT+SAPBR=1,1
-// OK
-// AT+HTTPINIT
-// OK
-// AT+HTTPPARA="CID",1
-// OK
-// AT+HTTPPARA="URL","http://thisshould.behidden.com"
-// OK
-// AT+HTTPPARA="CONTENT","application/json"
-// OK
-// AT+HTTPDATA=120,5000
-// DOWNLOAD
-// OK
-// AT+HTTPACTION=1
-// OK
-// +HTTPACTION: 1,200,27
-// AT+HTTPREAD
-// +HTTPREAD: 27
-// {"data":{"user":{"id":1}}}
-// OK
-// AT+HTTPTERM
-// OK
-// AT+SAPBR=0,1
-// OK
-
-char buffer[500];
-
-StaticJsonDocument<400> SendRequest(char* query) {
-  Serial.write("Sending request\n");
-
-  char urlCommand[30 + strlen(API_URL)];
-  sprintf(urlCommand, "AT+HTTPPARA=\"URL\",\"%s\"\n", API_URL);
-
-  size_t queryLen = strlen(query);
-  char lenCommand[30];
-  sprintf(lenCommand, "AT+HTTPDATA=%d,%d\n", queryLen, 5000);
-
-  static const char* const commands[] = {
-    "AT+SAPBR=3,1,\"Contype\",\"GPRS\"\n",
-    "AT+SAPBR=1,1\n",
-    "AT+HTTPINIT\n",
-    "AT+HTTPPARA=\"CID\",1\n",
-    urlCommand,
-    "AT+HTTPPARA=\"CONTENT\",\"application/json\"\n",
-    lenCommand,
-    "AT+HTTPACTION=1\n",
-    "AT+HTTPREAD\n",
-    "AT+HTTPTERM\n",
-    "AT+SAPBR=0,1\n",
-  };
-
-  char response[200];
-  int size;
-  unsigned int commandsLen = sizeof commands / sizeof *commands;
-  unsigned long timeout;
-  Serial.print("Commands to iterate through: ");
-  Serial.println(commandsLen);
-  for(uint8_t i = 0; i < commandsLen; i++) {
-    memset(buffer, 0, 500);
-    size = 0;
-
-    Serial1.write(commands[i]);
-    Serial1.flush();
-    if(i == 6) { // send query to HTTPDATA command
-      delay(10);
-      Serial1.write(query);
-      Serial1.flush();
-    }
-    timeout = millis() + 10000;
-    while(millis() < timeout) {
-      if(Serial1.available() < 1) continue;
-      buffer[size] = Serial1.read();
-      Serial.write(buffer[size]);
-      size++;
-      if(size >= 6
-        && buffer[size - 1] == 10 
-        && buffer[size - 2] == 13
-        && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K' // OK
-      ) {
-        if(i == 7) { // special case for AT+HTTPACTION response responding OK before query resolve :/
-          while(Serial1.available() < 1 && millis() < timeout);
-          while(Serial1.available() > 0 && millis() < timeout) {
-            buffer[size] = Serial1.read();
-            Serial.write(buffer[size]);
-            size++;
-          }
-        }
-        buffer[size] = '\0';
-        if(i == 8) { // special case for AT+HTTPREAD to extract the response
-          int16_t responseIdxStart = -1;
-          for(int idx = 0; idx < size - 7; idx++) {
-            if(responseIdxStart == -1 && buffer[idx] == '{') responseIdxStart = idx;
-            if(responseIdxStart > -1) response[idx - responseIdxStart] = buffer[idx];
-            if(idx == size - 8) response[idx - responseIdxStart + 1] = '\0';
-          }
-        }
-        break;
-      }
-    }
-  }
-  Serial.print("Request complete\nResponse is: ");
-  Serial.println(response);
-
-  StaticJsonDocument<400> doc;
-  DeserializationError error = deserializeJson(doc, response);
-  if (error) {
-    Serial.print("deserializeJson() failed: ");
-    Serial.println(error.f_str());
-  }
-  return doc;
-}
+Network network;
 
 void onBLEConnected(BLEDevice d) {
   Serial.println(">>> BLEConnected");
@@ -175,11 +59,11 @@ void onBLEConnected(BLEDevice d) {
     Serial.println(userIdValue);
     char mutationStr[100 + sizeof userIdValue + strlen(DEVICE_SERIAL)];
     sprintf(mutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
-    StaticJsonDocument<400> doc = SendRequest(mutationStr);
+    StaticJsonDocument<400> doc = network.SendRequest(mutationStr);
     if(doc["data"] && doc["data"]["loginAsHub"]) {
-      accessToken = (const char*)(doc["data"]["loginAsHub"]);
+      network.accessToken = (const char*)(doc["data"]["loginAsHub"]);
       Serial.print("token is: ");
-      Serial.println(accessToken);
+      Serial.println(network.accessToken);
       // TODO check if token is different from existing token in flash storage, if so replace it
       // cmaglie/FlashStorage
     } else {
@@ -372,62 +256,15 @@ void loop() {
       int32_t userIdValue = 1;
       char mutationStr[100 + sizeof userIdValue + strlen(DEVICE_SERIAL)];
       sprintf(mutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
-      StaticJsonDocument<400> doc = SendRequest(mutationStr);
+      StaticJsonDocument<400> doc = network.SendRequest(mutationStr);
       if(!doc["da"]) Serial.println("!doc[\"da\"]");
       if(doc["data"] != nullptr && doc["data"]["loginAsHub"] != nullptr) {
         const char* token = (const char*)(doc["data"]["loginAsHub"]);
         Serial.print("token is: ");
         Serial.println(token);
       }
-      // char* res = SendRequest("{\"query\":\"query GetUsers{user(where:{email:\\\"baconcheese113@hotmail.com\\\"}){id}}\",\"variables\":{}}\n");
-
-      // StaticJsonDocument<400> doc;
-      // DeserializationError error = deserializeJson(doc, res);
-      // if (error) {
-      //   Serial.print(F("deserializeJson() failed: "));
-      //   Serial.println(error.f_str());
-      // } else {
-      //   const char* token = doc["data"]["loginAsHub"];
-      //   Serial.print("token is: ");
-      //   Serial.println(token);
-      // }
-    }
-
-    if(in == 't') {
-      // TODO get json decoding working
-      Serial.println("Attempting doc decode");
-      char res[] = "{\"data\": \"hello\"}";
-      StaticJsonDocument<100> doc;
-      DeserializationError error = deserializeJson(doc, res);
-      Serial.println("Deserialized json");
-      if (error) {
-        Serial.print(F("deserializeJson() failed: "));
-        Serial.println(error.f_str());
-      } else {
-        Serial.println("no error");
-        const char* token = doc["data"];
-        Serial.print("token is: ");
-        Serial.println(token);
-      }
-    }
-    
-    if(in == 'y') {
-      // char* originalStr = "AT+HTTPPARA=\"URL\",\"%s\"\n";
-      // Serial.print("Original str len: ");
-      // Serial.println(strlen(originalStr));
-
-      // Serial.print("API url str len: ");
-      // Serial.println(strlen(API_URL));
-
-      // char urlCommand[60];
-      // sprintf(urlCommand, "AT+HTTPPARA=\"URL\",\"%s\"\n", API_URL);
-      
-      // Serial.print("Final str len: ");
-      // Serial.println(strlen(urlCommand));
     }
   }
-
-  // return;
 
   CheckInput();
 
