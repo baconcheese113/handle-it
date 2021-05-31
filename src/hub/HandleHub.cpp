@@ -1,9 +1,8 @@
 #include <ArduinoBLE.h>
 #include <ArduinoJson.h>
 #include <./conf.cpp>
-#define RGB_R  9
-#define RGB_G  3
-#define RGB_B  2
+#include <./hub/Utilities.h>
+
 #define D8 8
 #define D4  4
 
@@ -37,20 +36,6 @@ unsigned long pairButtonHoldStartTime = 0;
 BLEDevice* phone;
 
 const char* accessToken;
-
-
-void analogWriteRGB(u_int8_t r, u_int8_t g, u_int8_t b) {
-  Serial.print("Writing rgb value: ");
-  Serial.print(r);
-  Serial.print(", ");
-  Serial.print(g);
-  Serial.print(", ");
-  Serial.println(b);
-  int divisor = 1;
-  analogWrite(RGB_R, r / divisor);
-  analogWrite(RGB_G, g / divisor);
-  analogWrite(RGB_B, b / divisor);
-}
 
 // https://robu.in/sim800l-interfacing-with-arduino/
 // https://github.com/stephaneAG/SIM800L
@@ -216,7 +201,7 @@ void setup() {
   pinMode(D4, OUTPUT);
   pinMode(D8, INPUT);
 
-  analogWriteRGB(0, 0, 0);
+  Utilities::analogWriteRGB(0, 0, 0);
   Serial.begin(9600);
   while(!Serial);
   Serial1.begin(9600);
@@ -266,11 +251,11 @@ void PairToPhone() {
     pairingStartTime = 0;
     BLE.stopAdvertise();
     isAdvertising = false;
-    analogWriteRGB(255, 0, 0);
+    Utilities::analogWriteRGB(255, 0, 0);
     return;
   }
-  if(millis() / 1000 % 2) analogWriteRGB(75, 0, 130);
-  else analogWriteRGB(75, 0, 80);
+  if(millis() / 1000 % 2) Utilities::analogWriteRGB(75, 0, 130);
+  else Utilities::analogWriteRGB(75, 0, 80);
 
   if(!isAdvertising) {
     BLE.advertise();
@@ -285,7 +270,7 @@ void ScanForSensor() {
     // this was the first call to start scanning
     BLE.scanForName(PERIPHERAL_NAME);
     isScanning = true;
-    analogWriteRGB(255, 0, 0);
+    Utilities::analogWriteRGB(255, 0, 0);
     Serial.print("Hub scanning for peripheral...");
   }
   BLEDevice scannedDevice = BLE.available();
@@ -295,7 +280,7 @@ void ScanForSensor() {
 
   // We found a Sensor!
   peripheral = scannedDevice;
-  analogWriteRGB(255, 30, 0);
+  Utilities::analogWriteRGB(255, 30, 0);
   Serial.println("\nPERIPHERAL FOUND");
   Serial.print("Address found: ");
   Serial.println(peripheral.address());
@@ -313,14 +298,14 @@ void ScanForSensor() {
 
 void ConnectToFoundSensor() {
   if(!peripheral.connect()) {
-    analogWriteRGB(255, 0, 0);
+    Utilities::analogWriteRGB(255, 0, 0);
     Serial.println("\nFailed to connect retrying....");
     delay(1000);
     return;
   }
 
   // We're connected to sensor!
-  analogWriteRGB(255, 100, 200);
+  Utilities::analogWriteRGB(255, 100, 200);
   Serial.println("Peripheral connected!");
   Serial.print("Service count: ");
   Serial.println(peripheral.serviceCount());
@@ -364,7 +349,7 @@ void MonitorSensor() {
       else digitalWrite(D4, LOW);
     }
     else if(!armed && voltage > 28) {
-      analogWriteRGB(10, 100, 0);
+      Utilities::analogWriteRGB(10, 100, 0);
       armed = true;
     }
     else if(armed && voltage < 25) {
