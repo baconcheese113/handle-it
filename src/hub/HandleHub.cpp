@@ -52,7 +52,6 @@ void analogWriteRGB(u_int8_t r, u_int8_t g, u_int8_t b) {
   analogWrite(RGB_B, b / divisor);
 }
 
-
 // https://robu.in/sim800l-interfacing-with-arduino/
 // https://github.com/stephaneAG/SIM800L
 // AT+SAPBR=3,1,"Contype","GPRS"
@@ -377,6 +376,73 @@ void MonitorSensor() {
 }
 
 void loop() {
+
+  if(Serial1.available() > 0) {
+    Serial.write(Serial1.read());
+  }
+  if(Serial.available() > 0) {
+    int in = Serial.read();
+    Serial1.write(in);
+    if(in == 'r') {
+      int32_t userIdValue = 1;
+      char mutationStr[100 + sizeof userIdValue + strlen(DEVICE_SERIAL)];
+      sprintf(mutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
+      StaticJsonDocument<400> doc = SendRequest(mutationStr);
+      if(!doc["da"]) Serial.println("!doc[\"da\"]");
+      if(doc["data"] != nullptr && doc["data"]["loginAsHub"] != nullptr) {
+        const char* token = (const char*)(doc["data"]["loginAsHub"]);
+        Serial.print("token is: ");
+        Serial.println(token);
+      }
+      // char* res = SendRequest("{\"query\":\"query GetUsers{user(where:{email:\\\"baconcheese113@hotmail.com\\\"}){id}}\",\"variables\":{}}\n");
+
+      // StaticJsonDocument<400> doc;
+      // DeserializationError error = deserializeJson(doc, res);
+      // if (error) {
+      //   Serial.print(F("deserializeJson() failed: "));
+      //   Serial.println(error.f_str());
+      // } else {
+      //   const char* token = doc["data"]["loginAsHub"];
+      //   Serial.print("token is: ");
+      //   Serial.println(token);
+      // }
+    }
+
+    if(in == 't') {
+      // TODO get json decoding working
+      Serial.println("Attempting doc decode");
+      char res[] = "{\"data\": \"hello\"}";
+      StaticJsonDocument<100> doc;
+      DeserializationError error = deserializeJson(doc, res);
+      Serial.println("Deserialized json");
+      if (error) {
+        Serial.print(F("deserializeJson() failed: "));
+        Serial.println(error.f_str());
+      } else {
+        Serial.println("no error");
+        const char* token = doc["data"];
+        Serial.print("token is: ");
+        Serial.println(token);
+      }
+    }
+    
+    if(in == 'y') {
+      // char* originalStr = "AT+HTTPPARA=\"URL\",\"%s\"\n";
+      // Serial.print("Original str len: ");
+      // Serial.println(strlen(originalStr));
+
+      // Serial.print("API url str len: ");
+      // Serial.println(strlen(API_URL));
+
+      // char urlCommand[60];
+      // sprintf(urlCommand, "AT+HTTPPARA=\"URL\",\"%s\"\n", API_URL);
+      
+      // Serial.print("Final str len: ");
+      // Serial.println(strlen(urlCommand));
+    }
+  }
+
+  // return;
 
   CheckInput();
 
