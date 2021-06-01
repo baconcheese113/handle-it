@@ -17,11 +17,11 @@ const char* VOLT_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fb";
 
 const char* HUB_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fc";
 const char* SENSOR_VOLTS_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fc";
-const char* USER_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fd";
+const char* COMMAND_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fd";
 
 BLEService hubService = BLEService(HUB_SERVICE_UUID);
 BLEIntCharacteristic sensorVoltsChar(SENSOR_VOLTS_CHARACTERISTIC_UUID, BLERead | BLEWrite | BLEWriteWithoutResponse | BLEIndicate | BLEBroadcast);
-BLELongCharacteristic userChar(USER_CHARACTERISTIC_UUID, BLERead | BLEWrite);
+BLEStringCharacteristic commandChar(COMMAND_CHARACTERISTIC_UUID, BLERead | BLEWrite, 20);
 
 BLEDevice peripheral;
 bool isScanning = false;
@@ -46,28 +46,42 @@ void onBLEConnected(BLEDevice d) {
     isAdvertising = false;
     digitalWrite(LED_BUILTIN, HIGH);
     // Grab access_token from userId of connected phone
-    int32_t userIdValue = -1;
+    char rawCommand[20]{};
     Serial.println("Trying to read userid...");
-    while(userIdValue < 1) {
+    while(strlen(rawCommand) < 1) {
       // Required to allow the phone to finish connecting properly
       BLE.available();
-      userChar.readValue(userIdValue);
+      if(commandChar.written()) {
+        String writtenVal = commandChar.value();
+        writtenVal.toCharArray(rawCommand, 20);
+      }
       Serial.print(".");
       delay(100);
     }
     Serial.print("\nUserID value: ");
-    Serial.println(userIdValue);
-    char mutationStr[100 + sizeof userIdValue + strlen(DEVICE_SERIAL)];
-    sprintf(mutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
-    StaticJsonDocument<400> doc = network.SendRequest(mutationStr);
-    if(doc["data"] && doc["data"]["loginAsHub"]) {
-      network.accessToken = (const char*)(doc["data"]["loginAsHub"]);
+    Serial.println(rawCommand);
+
+    Command command = Utilities::parseRawCommand(rawCommand);
+    if(strcmp(command.type, "UserId") != 0) {
+      Serial.print("Error: command.type is not equal to UserId, command.type: ");
+      Serial.println(command.type);
+      return;
+    } else {
+      Serial.println("command.type is UserId");
+    }
+    char loginMutationStr[100 + strlen(command.value) + strlen(DEVICE_SERIAL)]{};
+    sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\")}\",\"variables\":{}}\n", command.value, DEVICE_SERIAL);
+    StaticJsonDocument<400> loginDoc = network.SendRequest(loginMutationStr);
+
+    if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
+      network.accessToken = (const char*)(loginDoc["data"]["loginAsHub"]);
       Serial.print("token is: ");
       Serial.println(network.accessToken);
       // TODO check if token is different from existing token in flash storage, if so replace it
       // cmaglie/FlashStorage
     } else {
       Serial.println("Error reading token");
+      return;
     }
   }
 }
@@ -101,10 +115,9 @@ void setup() {
   BLE.setLocalName(DEVICE_NAME);
   BLE.setAdvertisedService(hubService);
   hubService.addCharacteristic(sensorVoltsChar);
-  hubService.addCharacteristic(userChar);
+  hubService.addCharacteristic(commandChar);
   BLE.addService(hubService);
   sensorVoltsChar.writeValue(0);
-  userChar.writeValue(0);
 
   // Bluetooth LE connection handlers
   BLE.setEventHandler(BLEConnected, onBLEConnected);
@@ -254,11 +267,10 @@ void loop() {
     Serial1.write(in);
     if(in == 'r') {
       int32_t userIdValue = 1;
-      char mutationStr[100 + sizeof userIdValue + strlen(DEVICE_SERIAL)];
+      char mutationStr[100 + sizeof userIdValue + strlen(DEVICE_SERIAL)]{};
       sprintf(mutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
       StaticJsonDocument<400> doc = network.SendRequest(mutationStr);
-      if(!doc["da"]) Serial.println("!doc[\"da\"]");
-      if(doc["data"] != nullptr && doc["data"]["loginAsHub"] != nullptr) {
+      if(doc["data"] && doc["data"]["loginAsHub"]) {
         const char* token = (const char*)(doc["data"]["loginAsHub"]);
         Serial.print("token is: ");
         Serial.println(token);
