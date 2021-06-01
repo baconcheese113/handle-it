@@ -8,14 +8,14 @@ class Network {
         /**
          * Static memory used for reading network response, might need to increase size if expecting larger responses
         **/
-        char buffer[500];
+        char buffer[500]{};
 
     public:
         // TODO transfer to simulated EEPROM
         /**
          * Mutatable token to access API_URL as Hub, set once registration is successful
         **/
-        const char* accessToken;
+        char accessToken[100]{};
 
         /**
          * Sends a request containing query to API_URL, returns a json document with 

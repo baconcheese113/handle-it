@@ -74,13 +74,30 @@ void onBLEConnected(BLEDevice d) {
     StaticJsonDocument<400> loginDoc = network.SendRequest(loginMutationStr);
 
     if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
-      network.accessToken = (const char*)(loginDoc["data"]["loginAsHub"]);
+      const char* token = (const char *)(loginDoc["data"]["loginAsHub"]);
+      strcpy(network.accessToken, token);
       Serial.print("token is: ");
       Serial.println(network.accessToken);
       // TODO check if token is different from existing token in flash storage, if so replace it
       // cmaglie/FlashStorage
     } else {
       Serial.println("Error reading token");
+      return;
+    }
+
+    char getHubQueryStr[70] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
+    StaticJsonDocument<100> hubViewerDoc = network.SendRequest(getHubQueryStr);
+    if(hubViewerDoc["data"] && hubViewerDoc["data"]["hubViewer"]) {
+      const uint8_t id = (const uint8_t)(hubViewerDoc["data"]["hubViewer"]["id"]);
+      Serial.print("getHubViewer id: ");
+      Serial.println(id);
+      String hubCommand = "HubId:";
+      hubCommand.concat(id);
+      Serial.print("Wrote HubId command back to phone: ");
+      Serial.println(hubCommand);
+      commandChar.writeValue(hubCommand);
+    } else {
+      Serial.println("Error getting hubId");
       return;
     }
   }
