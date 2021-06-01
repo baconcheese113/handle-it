@@ -86,7 +86,7 @@ void onBLEConnected(BLEDevice d) {
     }
 
     char getHubQueryStr[70] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
-    StaticJsonDocument<100> hubViewerDoc = network.SendRequest(getHubQueryStr);
+    StaticJsonDocument<400> hubViewerDoc = network.SendRequest(getHubQueryStr);
     if(hubViewerDoc["data"] && hubViewerDoc["data"]["hubViewer"]) {
       const uint8_t id = (const uint8_t)(hubViewerDoc["data"]["hubViewer"]["id"]);
       Serial.print("getHubViewer id: ");
