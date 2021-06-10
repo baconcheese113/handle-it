@@ -19,6 +19,10 @@ const char* HUB_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fc";
 const char* SENSOR_VOLTS_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fc";
 const char* COMMAND_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fd";
 
+const char* COMMAND_START_SENSOR_SEARCH = "StartSensorSearch";
+const char* COMMAND_SENSOR_CONNECT = "SensorConnect";
+
+
 BLEService hubService = BLEService(HUB_SERVICE_UUID);
 BLEIntCharacteristic sensorVoltsChar(SENSOR_VOLTS_CHARACTERISTIC_UUID, BLERead | BLEWrite | BLEWriteWithoutResponse | BLEIndicate | BLEBroadcast);
 BLEStringCharacteristic commandChar(COMMAND_CHARACTERISTIC_UUID, BLERead | BLEWrite, 20);
@@ -37,6 +41,9 @@ BLEDevice* phone;
 
 Network network;
 
+Command currentCommand;
+String lastReadCommand = "";
+
 void onBLEConnected(BLEDevice d) {
   Serial.println(">>> BLEConnected");
   if(d.deviceName() != PERIPHERAL_NAME) {
@@ -45,6 +52,10 @@ void onBLEConnected(BLEDevice d) {
     BLE.stopAdvertise();
     isAdvertising = false;
     digitalWrite(LED_BUILTIN, HIGH);
+    if(strlen(network.accessToken) > 0) {
+      Serial.println("Already have accessToken");
+      return;
+    }
     // Grab access_token from userId of connected phone
     char rawCommand[20]{};
     Serial.println("Trying to read userid...");
@@ -71,12 +82,13 @@ void onBLEConnected(BLEDevice d) {
     }
     char loginMutationStr[100 + strlen(command.value) + strlen(DEVICE_SERIAL)]{};
     sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\")}\",\"variables\":{}}\n", command.value, DEVICE_SERIAL);
-    StaticJsonDocument<400> loginDoc = network.SendRequest(loginMutationStr);
-
+    DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr);
     if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
       const char* token = (const char *)(loginDoc["data"]["loginAsHub"]);
-      strcpy(network.accessToken, token);
+      strncpy(network.accessToken, token, strlen(token));
       Serial.print("token is: ");
+      Serial.println(token);
+      Serial.print("network.accessToken is: ");
       Serial.println(network.accessToken);
       // TODO check if token is different from existing token in flash storage, if so replace it
       // cmaglie/FlashStorage
@@ -85,8 +97,8 @@ void onBLEConnected(BLEDevice d) {
       return;
     }
 
-    char getHubQueryStr[70] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
-    StaticJsonDocument<400> hubViewerDoc = network.SendRequest(getHubQueryStr);
+    char getHubQueryStr[] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
+    DynamicJsonDocument hubViewerDoc = network.SendRequest(getHubQueryStr);
     if(hubViewerDoc["data"] && hubViewerDoc["data"]["hubViewer"]) {
       const uint8_t id = (const uint8_t)(hubViewerDoc["data"]["hubViewer"]["id"]);
       Serial.print("getHubViewer id: ");
@@ -179,6 +191,29 @@ void PairToPhone() {
   BLE.available();
 }
 
+void ListenForPhoneCommands() {
+  if(!phone) return;
+  // Grab access_token from userId of connected phone
+  char rawCommand[30]{};
+  if(commandChar.written()) {
+    String writtenVal = commandChar.value();
+    if(writtenVal == lastReadCommand) return;
+    lastReadCommand = writtenVal;
+    writtenVal.toCharArray(rawCommand, 30);
+  } else {
+    return;
+  }
+  Serial.print("\nCommand value: ");
+  Serial.println(rawCommand);
+
+  currentCommand = Utilities::parseRawCommand(rawCommand);
+
+  Serial.print("Parsed command type: ");
+  Serial.println(currentCommand.type);
+  Serial.print("Parsed command value: ");
+  Serial.println(currentCommand.value);
+}
+
 void ScanForSensor() {
   if(!isScanning) {
     // this was the first call to start scanning
@@ -208,6 +243,10 @@ void ScanForSensor() {
   Serial.println(peripheral.advertisedServiceUuidCount());
   BLE.stopScan();
   Serial.println("Connecting ...");
+  
+  commandChar.writeValue("SensorFound:1");
+  memset(currentCommand.type, 0, sizeof currentCommand.type);
+  memset(currentCommand.value, 0, sizeof currentCommand.value);
 }
 
 void ConnectToFoundSensor() {
@@ -229,6 +268,25 @@ void ConnectToFoundSensor() {
   Serial.println(peripheral.hasService(SENSOR_SERVICE_UUID));
   Serial.print("Discover the force: ");
   Serial.println(peripheral.discoverService(SENSOR_SERVICE_UUID));
+
+  // TODO get sensor serial
+  const char sensorSerial[] = "1";
+  char mutationStr[130 + strlen(sensorSerial)]{};
+  sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, serial:\\\"%s\\\"){id}}\",\"variables\":{}}\n", sensorSerial);
+  DynamicJsonDocument doc = network.SendRequest(mutationStr);
+  if(doc["data"] && doc["data"]["createSensor"]) {
+    const uint8_t id = (const uint8_t)(doc["data"]["createSensor"]["id"]);
+    Serial.print("createSensor id: ");
+    Serial.println(id);
+    String sensorAdded = "SensorAdded:";
+    sensorAdded.concat(id);
+    commandChar.writeValue(sensorAdded);
+  } else {
+    Serial.println("doc not valid");
+  }
+  
+  memset(currentCommand.type, 0, sizeof currentCommand.type);
+  memset(currentCommand.value, 0, sizeof currentCommand.value);
 }
 
 void MonitorSensor() {
@@ -281,16 +339,48 @@ void loop() {
   }
   if(Serial.available() > 0) {
     int in = Serial.read();
-    Serial1.write(in);
+    // Serial1.write(in);
     if(in == 'r') {
       int32_t userIdValue = 1;
       char mutationStr[100 + sizeof userIdValue + strlen(DEVICE_SERIAL)]{};
-      sprintf(mutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
-      StaticJsonDocument<400> doc = network.SendRequest(mutationStr);
+      snprintf(mutationStr, sizeof(mutationStr), "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
+      DynamicJsonDocument doc = network.SendRequest(mutationStr);
       if(doc["data"] && doc["data"]["loginAsHub"]) {
         const char* token = (const char*)(doc["data"]["loginAsHub"]);
         Serial.print("token is: ");
         Serial.println(token);
+        strncpy(network.accessToken, token, strlen(token));
+        Serial.print("accessToken is: ");
+        Serial.println(network.accessToken);
+      } else {
+        Serial.println("error parsing doc");
+      }
+    }
+    if(in == 't') {
+      char getHubQueryStr[] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
+      DynamicJsonDocument doc = network.SendRequest(getHubQueryStr);
+      if(doc["data"] != nullptr && doc["data"]["hubViewer"] != nullptr) {
+        const uint8_t id = (const uint8_t)(doc["data"]["hubViewer"]["id"]);
+        Serial.print("getHubViewer id: ");
+        Serial.println(id);
+      } else {
+        Serial.println("doc not valid");
+      }
+    }
+    if(in == 'y') {
+      const char sensorSerial[] = "1";
+      char mutationStr[130 + strlen(sensorSerial)]{};
+      snprintf(mutationStr, sizeof(mutationStr), "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, serial:\\\"%s\\\"){id}}\",\"variables\":{}}\n", sensorSerial);
+      DynamicJsonDocument doc = network.SendRequest(mutationStr);
+      if(doc["data"] && doc["data"]["createSensor"]) {
+        const uint8_t id = (const uint8_t)(doc["data"]["createSensor"]["id"]);
+        Serial.print("createSensor id: ");
+        Serial.println(id);
+        String sensorAdded = "SensorAdded:";
+        sensorAdded.concat(id);
+        commandChar.writeValue(sensorAdded);
+      } else {
+        Serial.println("doc not valid");
       }
     }
   }
@@ -304,15 +394,17 @@ void loop() {
     // Required so that services can be read for some reason
     // FIXME - https://github.com/arduino-libraries/ArduinoBLE/issues/175
     BLE.available();
+    ListenForPhoneCommands();
   }
 
   // Scan for peripheral
-  // if(!peripheral) {
-  //   ScanForSensor();
-  // } 
-  // else if (!peripheral.connected()) {
-  //   ConnectToFoundSensor();
-  // } else {
+  if(!peripheral && strcmp(currentCommand.type, COMMAND_START_SENSOR_SEARCH) == 0) {
+    ScanForSensor();
+  }
+  else if (!peripheral.connected() && strcmp(currentCommand.type, COMMAND_SENSOR_CONNECT) == 0) {
+    ConnectToFoundSensor();
+  }
+  // else {
   //   MonitorSensor();
   // }
 

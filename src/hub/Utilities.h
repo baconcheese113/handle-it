@@ -1,7 +1,7 @@
 #include <Arduino.h>
 
 struct Command {
-    char type[10]{};
+    char type[30]{};
     char value[50]{};
 };
 

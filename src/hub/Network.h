@@ -21,7 +21,7 @@ class Network {
          * Sends a request containing query to API_URL, returns a json document with 
          * response in the "data" field if no errors, otherwise errors will be in "errors" 
         **/
-        StaticJsonDocument<400> SendRequest(char* query);
+        DynamicJsonDocument SendRequest(char* query);
 };
 
 #endif

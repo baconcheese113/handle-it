@@ -1,27 +1,30 @@
 #include <./conf.cpp>
 #include <./hub/Network.h>
 
-uint8_t AT_HTTPDATA_LEN_IDX = 7;
+uint8_t AT_HTTPDATA_IDX = 7;
 uint8_t AT_HTTPACTION_IDX = 8;
 uint8_t AT_HTTPREAD_IDX = 9;
 
-StaticJsonDocument<400> Network::SendRequest(char* query) {
-    Serial.write("Sending request\n");
+uint8_t RESPONSE_SIZE = 200;
 
-    char authCommand[55 + 75];
-    if(strlen(accessToken)) {
+DynamicJsonDocument Network::SendRequest(char* query) {
+    Serial.println("Sending request");
+    Serial.println(query);
+
+    char authCommand[55 + strlen(accessToken)]{};
+    if(strlen(accessToken) > 0) {
         sprintf(authCommand, "AT+HTTPPARA=\"USERDATA\",\"Authorization:Bearer %s\"\n", accessToken);
     } else {
         strcpy(authCommand, "AT+HTTPPARA=\"USERDATA\",\"\"\n");
     }
 
-    char urlCommand[30 + strlen(API_URL)];
+    char urlCommand[30 + strlen(API_URL)]{};
     sprintf(urlCommand, "AT+HTTPPARA=\"URL\",\"%s\"\n", API_URL);
 
-    char lenCommand[30];
+    char lenCommand[30]{};
     sprintf(lenCommand, "AT+HTTPDATA=%d,%d\n", strlen(query), 5000);
 
-    static const char* const commands[] = {
+    const char* const commands[] = {
         "AT+SAPBR=3,1,\"Contype\",\"GPRS\"\n",
         "AT+SAPBR=1,1\n",
         "AT+HTTPINIT\n",
@@ -36,7 +39,7 @@ StaticJsonDocument<400> Network::SendRequest(char* query) {
         "AT+SAPBR=0,1\n",
     };
 
-    char response[200];
+    char response[RESPONSE_SIZE]{};
     int size;
     unsigned int commandsLen = sizeof commands / sizeof *commands;
     unsigned long timeout;
@@ -48,7 +51,7 @@ StaticJsonDocument<400> Network::SendRequest(char* query) {
 
         Serial1.write(commands[i]);
         Serial1.flush();
-        if(i == AT_HTTPDATA_LEN_IDX) { // send query to HTTPDATA command
+        if(i == AT_HTTPDATA_IDX) { // send query to HTTPDATA command
             delay(10);
             Serial1.write(query);
             Serial1.flush();
@@ -88,8 +91,8 @@ StaticJsonDocument<400> Network::SendRequest(char* query) {
     Serial.print("Request complete\nResponse is: ");
     Serial.println(response);
 
-    StaticJsonDocument<400> doc;
-    DeserializationError error = deserializeJson(doc, response);
+    DynamicJsonDocument doc(RESPONSE_SIZE);
+    DeserializationError error = deserializeJson(doc, (const char*)response);
     if (error) {
         Serial.print("deserializeJson() failed: ");
         Serial.println(error.f_str());
