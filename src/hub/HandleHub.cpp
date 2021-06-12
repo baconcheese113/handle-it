@@ -16,7 +16,6 @@ const char* SENSOR_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fb";
 const char* VOLT_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fb";
 
 const char* HUB_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fc";
-const char* SENSOR_VOLTS_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fc";
 const char* COMMAND_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fd";
 
 const char* COMMAND_START_SENSOR_SEARCH = "StartSensorSearch";
@@ -24,7 +23,6 @@ const char* COMMAND_SENSOR_CONNECT = "SensorConnect";
 
 
 BLEService hubService = BLEService(HUB_SERVICE_UUID);
-BLEIntCharacteristic sensorVoltsChar(SENSOR_VOLTS_CHARACTERISTIC_UUID, BLERead | BLEWrite | BLEWriteWithoutResponse | BLEIndicate | BLEBroadcast);
 BLEStringCharacteristic commandChar(COMMAND_CHARACTERISTIC_UUID, BLERead | BLEWrite, 20);
 
 BLEDevice peripheral;
@@ -32,8 +30,6 @@ bool isScanning = false;
 bool isAdvertising = false;
 
 BLECharacteristic volts;
-bool armed = false;
-bool alarmTriggered = false;
 
 unsigned long pairingStartTime = 0;
 unsigned long pairButtonHoldStartTime = 0;
@@ -44,8 +40,12 @@ Network network;
 Command currentCommand;
 String lastReadCommand = "";
 
+uint8_t autoConnectSensorId = 0;
+int32_t lastReadVoltage;
+
 void onBLEConnected(BLEDevice d) {
-  Serial.println(">>> BLEConnected");
+  Serial.print(">>> BLEConnected to: ");
+  Serial.println(d.address());
   if(d.deviceName() != PERIPHERAL_NAME) {
     phone = &d;
     pairingStartTime = 0;
@@ -143,10 +143,8 @@ void setup() {
   // BLE service to advertise to phone
   BLE.setLocalName(DEVICE_NAME);
   BLE.setAdvertisedService(hubService);
-  hubService.addCharacteristic(sensorVoltsChar);
   hubService.addCharacteristic(commandChar);
   BLE.addService(hubService);
-  sensorVoltsChar.writeValue(0);
 
   // Bluetooth LE connection handlers
   BLE.setEventHandler(BLEConnected, onBLEConnected);
@@ -172,7 +170,7 @@ void CheckInput() {
 }
 
 void PairToPhone() {
-  if(millis() > pairingStartTime + 60000) {
+  if(!strlen(network.accessToken) && millis() > pairingStartTime + 60000) {
     // pairing timed out
     pairingStartTime = 0;
     BLE.stopAdvertise();
@@ -192,17 +190,14 @@ void PairToPhone() {
 }
 
 void ListenForPhoneCommands() {
-  if(!phone) return;
+  if(!phone || !commandChar.written()) return;
   // Grab access_token from userId of connected phone
   char rawCommand[30]{};
-  if(commandChar.written()) {
-    String writtenVal = commandChar.value();
-    if(writtenVal == lastReadCommand) return;
-    lastReadCommand = writtenVal;
-    writtenVal.toCharArray(rawCommand, 30);
-  } else {
-    return;
-  }
+  String writtenVal = commandChar.value();
+  if(writtenVal == lastReadCommand) return;
+  lastReadCommand = writtenVal;
+  writtenVal.toCharArray(rawCommand, 30);
+
   Serial.print("\nCommand value: ");
   Serial.println(rawCommand);
 
@@ -268,6 +263,8 @@ void ConnectToFoundSensor() {
   Serial.println(peripheral.hasService(SENSOR_SERVICE_UUID));
   Serial.print("Discover the force: ");
   Serial.println(peripheral.discoverService(SENSOR_SERVICE_UUID));
+  Serial.print("Address: ");
+  Serial.println(peripheral.address());
 
   // TODO get sensor serial
   const char sensorSerial[] = "1";
@@ -278,9 +275,12 @@ void ConnectToFoundSensor() {
     const uint8_t id = (const uint8_t)(doc["data"]["createSensor"]["id"]);
     Serial.print("createSensor id: ");
     Serial.println(id);
-    String sensorAdded = "SensorAdded:";
-    sensorAdded.concat(id);
-    commandChar.writeValue(sensorAdded);
+    if(phone) {
+      String sensorAdded = "SensorAdded:";
+      sensorAdded.concat(id);
+      commandChar.writeValue(sensorAdded);
+      autoConnectSensorId = id;
+    }
   } else {
     Serial.println("doc not valid");
   }
@@ -310,22 +310,19 @@ void MonitorSensor() {
   if(volts.canRead()) {
     int32_t voltage = 0;
     volts.readValue(voltage);
-    // if(sensorVoltsChar.canWrite()) {
-      sensorVoltsChar.writeValue(voltage);
-    // } else {
-    //   Serial.println("Missing permissions to write");
-    // }
-    // TODO rework alarm triggering and add confirmation to sensor read
-    if(alarmTriggered) {
-      if(millis() / 1000 % 2) digitalWrite(D4, HIGH);
-      else digitalWrite(D4, LOW);
-    }
-    else if(!armed && voltage > 28) {
-      Utilities::analogWriteRGB(10, 100, 0);
-      armed = true;
-    }
-    else if(armed && voltage < 25) {
-      alarmTriggered = true;
+    bool isOpenNow = voltage < 5;
+    bool wasOpenBefore = lastReadVoltage < 5;
+    if(isOpenNow == wasOpenBefore) return;
+    char updateSensorMutation[100 + 4]{};
+    sprintf(updateSensorMutation, "{\"query\":\"mutation updateSensor{updateSensor(id: %i, isOpen: %s){ isOpen }}\",\"variables\":{}}\n", autoConnectSensorId, isOpenNow ? "true" : "false");
+    DynamicJsonDocument doc = network.SendRequest(updateSensorMutation);
+    if(doc["data"] && doc["data"]["updateSensor"]) {
+      const boolean isOpen = (const boolean)(doc["data"]["updateSensor"]["isOpen"]);
+      Serial.print("isOpen is: ");
+      Serial.println(isOpen);
+      lastReadVoltage = voltage;
+    } else {
+      Serial.println("error parsing doc");
     }
   } else {
     Serial.println("Unable to read volts");
@@ -340,55 +337,12 @@ void loop() {
   if(Serial.available() > 0) {
     int in = Serial.read();
     // Serial1.write(in);
-    if(in == 'r') {
-      int32_t userIdValue = 1;
-      char mutationStr[100 + sizeof userIdValue + strlen(DEVICE_SERIAL)]{};
-      snprintf(mutationStr, sizeof(mutationStr), "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%ld, serial:\\\"%s\\\")}\",\"variables\":{}}\n", userIdValue, DEVICE_SERIAL);
-      DynamicJsonDocument doc = network.SendRequest(mutationStr);
-      if(doc["data"] && doc["data"]["loginAsHub"]) {
-        const char* token = (const char*)(doc["data"]["loginAsHub"]);
-        Serial.print("token is: ");
-        Serial.println(token);
-        strncpy(network.accessToken, token, strlen(token));
-        Serial.print("accessToken is: ");
-        Serial.println(network.accessToken);
-      } else {
-        Serial.println("error parsing doc");
-      }
-    }
-    if(in == 't') {
-      char getHubQueryStr[] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
-      DynamicJsonDocument doc = network.SendRequest(getHubQueryStr);
-      if(doc["data"] != nullptr && doc["data"]["hubViewer"] != nullptr) {
-        const uint8_t id = (const uint8_t)(doc["data"]["hubViewer"]["id"]);
-        Serial.print("getHubViewer id: ");
-        Serial.println(id);
-      } else {
-        Serial.println("doc not valid");
-      }
-    }
-    if(in == 'y') {
-      const char sensorSerial[] = "1";
-      char mutationStr[130 + strlen(sensorSerial)]{};
-      snprintf(mutationStr, sizeof(mutationStr), "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, serial:\\\"%s\\\"){id}}\",\"variables\":{}}\n", sensorSerial);
-      DynamicJsonDocument doc = network.SendRequest(mutationStr);
-      if(doc["data"] && doc["data"]["createSensor"]) {
-        const uint8_t id = (const uint8_t)(doc["data"]["createSensor"]["id"]);
-        Serial.print("createSensor id: ");
-        Serial.println(id);
-        String sensorAdded = "SensorAdded:";
-        sensorAdded.concat(id);
-        commandChar.writeValue(sensorAdded);
-      } else {
-        Serial.println("doc not valid");
-      }
-    }
   }
 
   CheckInput();
 
   // Hub has entered pairing mode
-  if(pairingStartTime > 0) {
+  if((!phone && strlen(network.accessToken)) || pairingStartTime > 0) {
     PairToPhone();
   } else if(phone) {
     // Required so that services can be read for some reason
@@ -398,15 +352,15 @@ void loop() {
   }
 
   // Scan for peripheral
-  if(!peripheral && strcmp(currentCommand.type, COMMAND_START_SENSOR_SEARCH) == 0) {
+  if(!peripheral && (autoConnectSensorId || strcmp(currentCommand.type, COMMAND_START_SENSOR_SEARCH) == 0)) {
     ScanForSensor();
   }
-  else if (!peripheral.connected() && strcmp(currentCommand.type, COMMAND_SENSOR_CONNECT) == 0) {
+  else if (peripheral && !peripheral.connected() && (autoConnectSensorId || strcmp(currentCommand.type, COMMAND_SENSOR_CONNECT)) == 0) {
     ConnectToFoundSensor();
   }
-  // else {
-  //   MonitorSensor();
-  // }
+  else if (peripheral && peripheral.connected()) {
+    MonitorSensor();
+  }
 
   // debugging is a bit crazy 
   if(Serial.availableForWrite()) {
