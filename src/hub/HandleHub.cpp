@@ -41,7 +41,7 @@ Command currentCommand;
 String lastReadCommand = "";
 
 uint8_t autoConnectSensorId = 0;
-int32_t lastReadVoltage;
+int32_t lastReadVoltage = 0;
 
 void onBLEConnected(BLEDevice d) {
   Serial.print(">>> BLEConnected to: ");
@@ -263,13 +263,11 @@ void ConnectToFoundSensor() {
   Serial.println(peripheral.hasService(SENSOR_SERVICE_UUID));
   Serial.print("Discover the force: ");
   Serial.println(peripheral.discoverService(SENSOR_SERVICE_UUID));
-  Serial.print("Address: ");
-  Serial.println(peripheral.address());
 
   // TODO get sensor serial
   const char sensorSerial[] = "1";
-  char mutationStr[130 + strlen(sensorSerial)]{};
-  sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, serial:\\\"%s\\\"){id}}\",\"variables\":{}}\n", sensorSerial);
+  char mutationStr[155 + strlen(sensorSerial)]{};
+  sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, isOpen: true, isConnected: true, serial:\\\"%s\\\"){id}}\",\"variables\":{}}\n", sensorSerial);
   DynamicJsonDocument doc = network.SendRequest(mutationStr);
   if(doc["data"] && doc["data"]["createSensor"]) {
     const uint8_t id = (const uint8_t)(doc["data"]["createSensor"]["id"]);
@@ -330,14 +328,6 @@ void MonitorSensor() {
 }
 
 void loop() {
-
-  if(Serial1.available() > 0) {
-    Serial.write(Serial1.read());
-  }
-  if(Serial.available() > 0) {
-    int in = Serial.read();
-    // Serial1.write(in);
-  }
 
   CheckInput();
 
