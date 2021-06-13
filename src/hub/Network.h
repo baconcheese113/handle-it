@@ -3,19 +3,25 @@
 
 #include <ArduinoJson.h>
 
+// Needs to be large enough for error messages
+const uint16_t RESPONSE_SIZE = 2000;
+
 class Network {
     private:
         /**
          * Static memory used for reading network response, might need to increase size if expecting larger responses
         **/
-        char buffer[500]{};
+        char buffer[RESPONSE_SIZE]{};
 
     public:
-        // TODO transfer to simulated EEPROM
         /**
          * Mutatable token to access API_URL as Hub, set once registration is successful
         **/
         char accessToken[100]{};
+
+        void InitializeAccessToken();
+
+        void SetAccessToken(const char newAccessToken[100]);
 
         /**
          * Sends a request containing query to API_URL, returns a json document with 

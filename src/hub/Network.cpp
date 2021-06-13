@@ -1,11 +1,28 @@
+#include <FlashStorage.h>
 #include <./conf.cpp>
 #include <./hub/Network.h>
+
+FlashStorage(flashAccessToken, const char*);
 
 uint8_t AT_HTTPDATA_IDX = 7;
 uint8_t AT_HTTPACTION_IDX = 8;
 uint8_t AT_HTTPREAD_IDX = 9;
 
-uint8_t RESPONSE_SIZE = 200;
+void Network::InitializeAccessToken() {
+    const char* foundToken = flashAccessToken.read();
+    if(strlen(foundToken) > 20) {
+        Serial.print("Found existing token length: ");
+        Serial.println(strlen(foundToken));
+        strcpy(accessToken, foundToken);
+    } else {
+        Serial.println("No existing token found");
+    }
+}
+
+void Network::SetAccessToken(const char newAccessToken[100]) {
+    flashAccessToken.write(newAccessToken);
+    strcpy(accessToken, newAccessToken);
+}
 
 DynamicJsonDocument Network::SendRequest(char* query) {
     Serial.println("Sending request");
@@ -46,7 +63,7 @@ DynamicJsonDocument Network::SendRequest(char* query) {
     Serial.print("Commands to iterate through: ");
     Serial.println(commandsLen);
     for(uint8_t i = 0; i < commandsLen; i++) {
-        memset(buffer, 0, 500);
+        memset(buffer, 0, RESPONSE_SIZE);
         size = 0;
 
         Serial1.write(commands[i]);
@@ -96,6 +113,14 @@ DynamicJsonDocument Network::SendRequest(char* query) {
     if (error) {
         Serial.print("deserializeJson() failed: ");
         Serial.println(error.f_str());
+    }
+    char substr[10];
+    memcpy(substr, response, 10);
+    if (strcmp(substr, "{\"errors\"") == 0) {
+        Serial.println("Graph Failure: Clearing accessToken");
+        memset(accessToken, 0, 100);
+        flashAccessToken.write("");
+        Serial.println("accessToken cleared");
     }
     return doc;
 }

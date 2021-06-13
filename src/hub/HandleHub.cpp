@@ -85,7 +85,7 @@ void onBLEConnected(BLEDevice d) {
     DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr);
     if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
       const char* token = (const char *)(loginDoc["data"]["loginAsHub"]);
-      strncpy(network.accessToken, token, strlen(token));
+      network.SetAccessToken(token);
       Serial.print("token is: ");
       Serial.println(token);
       Serial.print("network.accessToken is: ");
@@ -150,6 +150,26 @@ void setup() {
   BLE.setEventHandler(BLEConnected, onBLEConnected);
   BLE.setEventHandler(BLEDisconnected, onBLEDisconnected);
   BLE.stopAdvertise();
+
+  network.InitializeAccessToken();
+
+  // TODO get serials of all sensors to autoConnect with
+  if(strlen(network.accessToken)) {
+    char sensorQuery[] = "{\"query\":\"query getMySensors{hubViewer{sensors{id}}}\",\"variables\":{}}";
+    DynamicJsonDocument doc = network.SendRequest(sensorQuery);
+    if(doc["data"] && doc["data"]["hubViewer"] && doc["doc"]["hubViewer"]["sensors"]) {
+      const JsonArrayConst sensors = doc["data"]["hubViewer"]["sensors"];
+      if(sensors.size()) {
+        autoConnectSensorId = sensors[0]["id"];
+        Serial.print("Looking for existing sensor: ");
+        Serial.println(autoConnectSensorId);
+      }
+    } else {
+      Serial.println("Get sensors failed");
+    }
+  } else {
+    Serial.println("No accessToken found");
+  }
 }
 
 void CheckInput() {
