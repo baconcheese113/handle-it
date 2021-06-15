@@ -14,10 +14,12 @@ unsigned long lastReset = 0;
 void onBLEConnected(BLEDevice d) {
   Serial.println(">>> BLEConnected");
   digitalWrite(LED_BUILTIN, HIGH);
+  BLE.stopAdvertise();
 }
 void onBLEDisconnected(BLEDevice d) {
   Serial.println(">>> BLEDisconnected");
   digitalWrite(LED_BUILTIN, LOW);
+  BLE.advertise();
 }
 void onRxCharValueUpdate(BLEDevice d, BLECharacteristic c) {
   Serial.println(">>> RxCharValueUpdate");
@@ -42,6 +44,7 @@ void setup() {
   }
   Serial.println("Bluetooth setup beginning");
   BLE.setLocalName(nameOfPeripheral);
+  BLE.setDeviceName(nameOfPeripheral);
   BLE.setAdvertisedService(forceService);
   // forceService.addCharacteristic(rxChar);
   forceService.addCharacteristic(volts);
