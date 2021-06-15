@@ -116,6 +116,7 @@ DynamicJsonDocument Network::SendRequest(char* query) {
     }
     char substr[10];
     memcpy(substr, response, 10);
+    substr[9] = '\0';
     if (strcmp(substr, "{\"errors\"") == 0) {
         Serial.println("Graph Failure: Clearing accessToken");
         memset(accessToken, 0, 100);

@@ -59,7 +59,7 @@ void onBLEConnected(BLEDevice d) {
     // Grab access_token from userId of connected phone
     char rawCommand[20]{};
     Serial.println("Trying to read userid...");
-    while(strlen(rawCommand) < 1) {
+    while(strlen(rawCommand) < 1 && phone) {
       // Required to allow the phone to finish connecting properly
       BLE.available();
       if(commandChar.written()) {
@@ -69,6 +69,7 @@ void onBLEConnected(BLEDevice d) {
       Serial.print(".");
       delay(100);
     }
+    if(!phone) return;
     Serial.print("\nUserID value: ");
     Serial.println(rawCommand);
 
@@ -118,8 +119,11 @@ void onBLEConnected(BLEDevice d) {
 void onBLEDisconnected(BLEDevice d) {
   Serial.println(">>> BLEDisconnected");
   digitalWrite(LED_BUILTIN, LOW);
-  if(d.deviceName() != PERIPHERAL_NAME) {
+  if(phone && d.deviceName() != phone->deviceName()) {
+    Serial.println("Phone disconnected");
     phone = NULL;
+    memset(currentCommand.type, 0, sizeof currentCommand.type);
+    memset(currentCommand.value, 0, sizeof currentCommand.value);
   }
 }
 
@@ -129,8 +133,8 @@ void setup() {
   pinMode(D8, INPUT);
 
   Utilities::analogWriteRGB(0, 0, 0);
-  Serial.begin(9600);
-  while(!Serial);
+  // Serial.begin(9600);
+  // while(!Serial);
   Serial1.begin(9600);
   while(!Serial1);
    // begin BLE initialization
@@ -157,7 +161,7 @@ void setup() {
   if(strlen(network.accessToken)) {
     char sensorQuery[] = "{\"query\":\"query getMySensors{hubViewer{sensors{id}}}\",\"variables\":{}}";
     DynamicJsonDocument doc = network.SendRequest(sensorQuery);
-    if(doc["data"] && doc["data"]["hubViewer"] && doc["doc"]["hubViewer"]["sensors"]) {
+    if(doc["data"] && doc["data"]["hubViewer"] && doc["data"]["hubViewer"]["sensors"]) {
       const JsonArrayConst sensors = doc["data"]["hubViewer"]["sensors"];
       if(sensors.size()) {
         autoConnectSensorId = sensors[0]["id"];
@@ -165,7 +169,8 @@ void setup() {
         Serial.println(autoConnectSensorId);
       }
     } else {
-      Serial.println("Get sensors failed");
+      Serial.print("Get sensors failed, but accessToken strlen is: ");
+      Serial.println(strlen(network.accessToken));
     }
   } else {
     Serial.println("No accessToken found");
@@ -238,6 +243,7 @@ void ScanForSensor() {
     Serial.print("Hub scanning for peripheral...");
   }
   BLEDevice scannedDevice = BLE.available();
+  if(scannedDevice.deviceName().length()) Serial.println(scannedDevice.deviceName());
   Serial.print(".");
   bool isPeripheral = scannedDevice.deviceName() == PERIPHERAL_NAME || scannedDevice.localName() == PERIPHERAL_NAME;
   if (!isPeripheral) return;
