@@ -25,11 +25,10 @@ const char* COMMAND_SENSOR_CONNECT = "SensorConnect";
 BLEService hubService = BLEService(HUB_SERVICE_UUID);
 BLEStringCharacteristic commandChar(COMMAND_CHARACTERISTIC_UUID, BLERead | BLEWrite, 20);
 
-BLEDevice peripheral;
+BLEDevice* peripheral;
 bool isScanning = false;
 bool isAdvertising = false;
-
-BLECharacteristic volts;
+bool isAddingNewSensor = false;
 
 unsigned long pairingStartTime = 0;
 unsigned long pairButtonHoldStartTime = 0;
@@ -40,14 +39,18 @@ Network network;
 Command currentCommand;
 String lastReadCommand = "";
 
-uint8_t autoConnectSensorId = 0;
+String knownSensorAddrs[10];
 int32_t lastReadVoltage = 0;
 
 void onBLEConnected(BLEDevice d) {
   Serial.print(">>> BLEConnected to: ");
   Serial.println(d.address());
-  if(d.deviceName() != PERIPHERAL_NAME) {
-    phone = &d;
+  
+  bool dNameMatch = d.deviceName().compareTo(PERIPHERAL_NAME) == 0 || d.localName().compareTo(PERIPHERAL_NAME) == 0;
+  bool peripheralNameMatch = peripheral->deviceName().compareTo(PERIPHERAL_NAME) == 0 || peripheral->localName().compareTo(PERIPHERAL_NAME) == 0;
+  if(!dNameMatch && !peripheralNameMatch) {
+    phone = new BLEDevice();
+    *phone = d;
     pairingStartTime = 0;
     BLE.stopAdvertise();
     isAdvertising = false;
@@ -119,9 +122,15 @@ void onBLEConnected(BLEDevice d) {
 void onBLEDisconnected(BLEDevice d) {
   Serial.println(">>> BLEDisconnected");
   digitalWrite(LED_BUILTIN, LOW);
+  if(peripheral && peripheral->address() == d.address()) {
+    delete peripheral;
+    peripheral = nullptr;
+    Utilities::analogWriteRGB(0, 0, 0);
+  }
   if(phone && d.deviceName() != phone->deviceName()) {
     Serial.println("Phone disconnected");
-    phone = NULL;
+    delete phone;
+    phone = nullptr;
     memset(currentCommand.type, 0, sizeof currentCommand.type);
     memset(currentCommand.value, 0, sizeof currentCommand.value);
   }
@@ -164,9 +173,10 @@ void setup() {
     if(doc["data"] && doc["data"]["hubViewer"] && doc["data"]["hubViewer"]["sensors"]) {
       const JsonArrayConst sensors = doc["data"]["hubViewer"]["sensors"];
       if(sensors.size()) {
-        autoConnectSensorId = sensors[0]["id"];
-        Serial.print("Looking for existing sensor: ");
-        Serial.println(autoConnectSensorId);
+        // TODO set knownSensorAddrs
+        // knownSensorAddrs = sensors[0]["id"];
+        // Serial.print("Looking for existing sensor: ");
+        // Serial.println(knownSensorAddrs)
       }
     } else {
       Serial.print("Get sensors failed, but accessToken strlen is: ");
@@ -228,6 +238,10 @@ void ListenForPhoneCommands() {
 
   currentCommand = Utilities::parseRawCommand(rawCommand);
 
+  if(strcmp(currentCommand.type, COMMAND_START_SENSOR_SEARCH) == 0) {
+    isAddingNewSensor = true;
+  }
+
   Serial.print("Parsed command type: ");
   Serial.println(currentCommand.type);
   Serial.print("Parsed command value: ");
@@ -243,52 +257,73 @@ void ScanForSensor() {
     Serial.print("Hub scanning for peripheral...");
   }
   BLEDevice scannedDevice = BLE.available();
-  if(scannedDevice.deviceName().length()) Serial.println(scannedDevice.deviceName());
   Serial.print(".");
   bool isPeripheral = scannedDevice.deviceName() == PERIPHERAL_NAME || scannedDevice.localName() == PERIPHERAL_NAME;
   if (!isPeripheral) return;
+  Serial.print("\nFound possible sensor: ");
+  Serial.println(scannedDevice.address());
+
+  if(!isAddingNewSensor) {
+    bool isKnownSensor = false;
+    for (uint8_t i = 0; i < sizeof(knownSensorAddrs); i++) {
+      if(scannedDevice.address() == knownSensorAddrs[i]) {
+        isKnownSensor = true;
+        break;
+      }
+    }
+    if(!isKnownSensor) return;
+  }
 
   // We found a Sensor!
-  peripheral = scannedDevice;
+  peripheral = new BLEDevice();
+  *peripheral = scannedDevice;
   Utilities::analogWriteRGB(255, 30, 0);
   Serial.println("\nPERIPHERAL FOUND");
   Serial.print("Address found: ");
-  Serial.println(peripheral.address());
+  Serial.println(peripheral->address());
   Serial.print("Local Name: ");
-  Serial.println(peripheral.localName());
+  Serial.println(peripheral->localName());
   Serial.print("Device Name: ");
-  Serial.println(peripheral.deviceName());
+  Serial.println(peripheral->deviceName());
   Serial.print("Advertised Service UUID: ");
-  Serial.println(peripheral.advertisedServiceUuid());
+  Serial.println(peripheral->advertisedServiceUuid());
   Serial.print("Advertised Service UUID Count: ");
-  Serial.println(peripheral.advertisedServiceUuidCount());
+  Serial.println(peripheral->advertisedServiceUuidCount());
   BLE.stopScan();
   isScanning = false;
   
-  commandChar.writeValue("SensorFound:1");
-  memset(currentCommand.type, 0, sizeof currentCommand.type);
-  memset(currentCommand.value, 0, sizeof currentCommand.value);
+  if(isAddingNewSensor) {
+    Serial.println("Waiting for command to connect...");
+    commandChar.writeValue("SensorFound:1");
+    memset(currentCommand.type, 0, sizeof currentCommand.type);
+    memset(currentCommand.value, 0, sizeof currentCommand.value);
+  }
 }
 
 void ConnectToFoundSensor() {
-  if(!peripheral.connect()) {
+  if(!peripheral->connect()) {
     Utilities::analogWriteRGB(255, 0, 0);
     Serial.println("\nFailed to connect retrying....");
     delay(1000);
     return;
   }
+  if(isAddingNewSensor && strcmp(currentCommand.type, COMMAND_SENSOR_CONNECT) != 0) return;
 
   // We're connected to sensor!
   Utilities::analogWriteRGB(255, 100, 200);
   Serial.println("Peripheral connected!");
+  Serial.println(peripheral->discoverService(SENSOR_SERVICE_UUID));
+  Serial.println(peripheral->discoverAttributes());
   Serial.print("Service count: ");
-  Serial.println(peripheral.serviceCount());
+  Serial.println(peripheral->serviceCount());
   Serial.print("Appearance: ");
-  Serial.println(peripheral.appearance());
+  Serial.println(peripheral->appearance());
   Serial.print("Has force service: ");
-  Serial.println(peripheral.hasService(SENSOR_SERVICE_UUID));
-  Serial.print("Discover the force: ");
-  Serial.println(peripheral.discoverService(SENSOR_SERVICE_UUID));
+  Serial.println(peripheral->hasService(SENSOR_SERVICE_UUID));
+  Serial.print("Has volts: ");
+  Serial.println(peripheral->hasCharacteristic(VOLT_CHARACTERISTIC_UUID));
+
+  if(!isAddingNewSensor) return;
 
   // TODO get sensor serial
   const char sensorSerial[] = "1";
@@ -303,7 +338,7 @@ void ConnectToFoundSensor() {
       String sensorAdded = "SensorAdded:";
       sensorAdded.concat(id);
       commandChar.writeValue(sensorAdded);
-      autoConnectSensorId = id;
+      knownSensorAddrs[(int)sizeof(knownSensorAddrs) / sizeof(knownSensorAddrs[0])] = id;
     }
   } else {
     Serial.println("doc not valid");
@@ -314,31 +349,38 @@ void ConnectToFoundSensor() {
 }
 
 void MonitorSensor() {
-  if(!volts) {
-    // this was the first call to start monitoring
-    BLEService forceService = peripheral.service(SENSOR_SERVICE_UUID);
-    bool hasVolts = forceService.hasCharacteristic(VOLT_CHARACTERISTIC_UUID);
-    Serial.print("Has volts: ");
-    Serial.println(hasVolts);
-    if(!hasVolts) return;
-    volts = forceService.characteristic(VOLT_CHARACTERISTIC_UUID);
-    Serial.print("Characteristic value length: ");
-    Serial.println(volts.valueLength());
-    Serial.print("Characteristic descriptor: ");
-    Serial.println(volts.descriptor(0));
-    Serial.print("Can read: ");
-    Serial.println(volts.canRead());
-    Serial.print("Can subscribe: ");
-    Serial.println(volts.canSubscribe());
-  }
+  BLEService forceService = peripheral->service(SENSOR_SERVICE_UUID);
+  bool hasVolts = forceService.hasCharacteristic(VOLT_CHARACTERISTIC_UUID);
+  Serial.print("Has volts: ");
+  Serial.println(hasVolts);
+  if(!hasVolts) return;
+  BLECharacteristic volts = forceService.characteristic(VOLT_CHARACTERISTIC_UUID);
+  Serial.print("Characteristic value length: ");
+  Serial.println(volts.valueLength());
+  Serial.print("Characteristic descriptor: ");
+  Serial.println(volts.descriptor(0));
+  Serial.print("Can read: ");
+  Serial.println(volts.canRead());
+  Serial.print("Can subscribe: ");
+  Serial.println(volts.canSubscribe());
+
   if(volts.canRead()) {
     int32_t voltage = 0;
     volts.readValue(voltage);
+    Serial.print("Volts value: ");
+    Serial.println(voltage);
+    if(!isAddingNewSensor) {
+      // TODO send sensor event
+      peripheral->disconnect();
+      // TODO implement a better way to prevent reconnecting
+      delay(20000);
+      return;
+    }
     bool isOpenNow = voltage < 5;
     bool wasOpenBefore = lastReadVoltage < 5;
     if(isOpenNow == wasOpenBefore) return;
     char updateSensorMutation[100 + 4]{};
-    sprintf(updateSensorMutation, "{\"query\":\"mutation updateSensor{updateSensor(id: %i, isOpen: %s){ isOpen }}\",\"variables\":{}}\n", autoConnectSensorId, isOpenNow ? "true" : "false");
+    sprintf(updateSensorMutation, "{\"query\":\"mutation updateSensor{updateSensor(id: %i, isOpen: %s){ isOpen }}\",\"variables\":{}}\n", 1, isOpenNow ? "true" : "false");
     DynamicJsonDocument doc = network.SendRequest(updateSensorMutation);
     if(doc["data"] && doc["data"]["updateSensor"]) {
       const boolean isOpen = (const boolean)(doc["data"]["updateSensor"]["isOpen"]);
@@ -368,13 +410,13 @@ void loop() {
   }
 
   // Scan for peripheral
-  if(!peripheral && (autoConnectSensorId || strcmp(currentCommand.type, COMMAND_START_SENSOR_SEARCH) == 0)) {
+  if(!peripheral) {
     ScanForSensor();
   }
-  else if (peripheral && !peripheral.connected() && (autoConnectSensorId || strcmp(currentCommand.type, COMMAND_SENSOR_CONNECT)) == 0) {
+  else if (!peripheral->connected()) {
     ConnectToFoundSensor();
   }
-  else if (peripheral && peripheral.connected()) {
+  else {
     MonitorSensor();
   }
 
