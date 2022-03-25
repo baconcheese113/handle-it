@@ -12,8 +12,8 @@ const char* DEVICE_SERIAL = "RealSensorSerial0";
 const char* DEVICE_NAME = "HandleIt Hub";
 
 const char* PERIPHERAL_NAME = "HandleIt Client";
-const char* SENSOR_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fb";
-const char* VOLT_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fb";
+const char* SENSOR_SERVICE_UUID = "1000181a-0000-1000-8000-00805f9b34fb";
+const char* VOLT_CHARACTERISTIC_UUID = "10002A58-0000-1000-8000-00805f9b34fb";
 
 const char* HUB_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fc";
 const char* COMMAND_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fd";
@@ -263,7 +263,7 @@ void ScanForSensor() {
   Serial.print("Advertised Service UUID Count: ");
   Serial.println(peripheral.advertisedServiceUuidCount());
   BLE.stopScan();
-  Serial.println("Connecting ...");
+  isScanning = false;
   
   commandChar.writeValue("SensorFound:1");
   memset(currentCommand.type, 0, sizeof currentCommand.type);

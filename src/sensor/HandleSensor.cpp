@@ -21,19 +21,16 @@ void onBLEDisconnected(BLEDevice d) {
   digitalWrite(LED_BUILTIN, LOW);
   BLE.advertise();
 }
-void onRxCharValueUpdate(BLEDevice d, BLECharacteristic c) {
-  Serial.println(">>> RxCharValueUpdate");
-}
+// void onRxCharValueUpdate(BLEDevice d, BLECharacteristic c) {
+//   Serial.println(">>> RxCharValueUpdate");
+// }
 
 void setup() {
   // initialize serial communication at 9600 bits per second:
   Serial.begin(9600);
   // while(!Serial);
   pinMode(A1, INPUT_PULLUP);
-  pinMode(D8, OUTPUT);
-  pinMode(D7, OUTPUT);
   pinMode(D6, OUTPUT);
-  pinMode(D5, OUTPUT);
   pinMode(D4, OUTPUT);
 
   // begin BLE initialization
@@ -87,7 +84,6 @@ void loop() {
 
   // ***** force algorithm******
   digitalWrite(D6, LOW);
-  digitalWrite(D5, LOW);
   digitalWrite(D4, LOW);
   // read the input on analog pin 0:
   int sensorValue = analogRead(A0);
@@ -97,9 +93,6 @@ void loop() {
   // Serial.println(voltage);
   if(voltage > 1.0) {
     digitalWrite(D6, HIGH);
-  }
-  if(voltage > 2.0) {
-    digitalWrite(D5, HIGH);
   }
   if(voltage >= 2.5) {
     digitalWrite(D4, HIGH);
