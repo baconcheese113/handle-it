@@ -40,6 +40,7 @@ Command currentCommand;
 String lastReadCommand = "";
 
 String knownSensorAddrs[10];
+uint8_t knownSensorAddrsLen = 0;
 int32_t lastReadVoltage = 0;
 
 void onBLEConnected(BLEDevice d) {
@@ -174,6 +175,7 @@ void setup() {
       if(sensors.size()) {
         for(uint8_t i = 0; i < sensors.size(); i++) {
           knownSensorAddrs[i] = String((const char*)sensors[i]["serial"]);
+          knownSensorAddrsLen++;
           Serial.print(knownSensorAddrs[i]);
           Serial.print(" is knownSensorAddrs at idx: ");
           Serial.println(i);
@@ -258,7 +260,15 @@ void ScanForSensor() {
     Serial.print("Hub scanning for peripheral...");
   }
   BLEDevice scannedDevice = BLE.available();
-  Serial.print(".");
+  if(scannedDevice.localName().length() > 0) {
+    Serial.print("Scanned: (localName) ");
+    Serial.println(scannedDevice.localName());
+  } else if (scannedDevice.deviceName().length() > 0) {
+    Serial.print("Scanned: (deviceName) ");
+    Serial.println(scannedDevice.deviceName());
+  } else {
+    Serial.print(".");
+  }
   bool isPeripheral = scannedDevice.deviceName() == PERIPHERAL_NAME || scannedDevice.localName() == PERIPHERAL_NAME;
   if (!isPeripheral) return;
   Serial.print("\nFound possible sensor: ");
@@ -266,7 +276,9 @@ void ScanForSensor() {
 
   if(!isAddingNewSensor) {
     bool isKnownSensor = false;
-    for (uint8_t i = 0; i < sizeof(knownSensorAddrs); i++) {
+    for (uint8_t i = 0; i < knownSensorAddrsLen; i++) {
+      Serial.print("Checking for a match with: ");
+      Serial.println(knownSensorAddrs[i]);
       if(scannedDevice.address() == knownSensorAddrs[i]) {
         isKnownSensor = true;
         break;
@@ -339,7 +351,8 @@ void ConnectToFoundSensor() {
       String sensorAdded = "SensorAdded:";
       sensorAdded.concat(id);
       commandChar.writeValue(sensorAdded);
-      knownSensorAddrs[(int)sizeof(knownSensorAddrs) / sizeof(knownSensorAddrs[0])] = id;
+      knownSensorAddrs[knownSensorAddrsLen] = peripheral->address();
+      knownSensorAddrsLen++;
     }
   } else {
     Serial.println("doc not valid");
@@ -371,7 +384,18 @@ void MonitorSensor() {
     Serial.print("Volts value: ");
     Serial.println(voltage);
     if(!isAddingNewSensor) {
-      // TODO send sensor event
+      const char* address = peripheral->address().c_str();
+      char createEvent[100 + strlen(address)]{};
+      sprintf(createEvent, "{\"query\":\"mutation CreateEvent{createEvent(serial:\\\"%s\\\"){ id }}\",\"variables\":{}}\n", address);
+      DynamicJsonDocument doc = network.SendRequest(createEvent);
+      if(doc["data"] && doc["data"]["createEvent"]) {
+        const uint8_t id = (const uint8_t)(doc["data"]["createEvent"]["id"]);
+        Serial.print("created event id is: ");
+        Serial.println(id);
+        lastReadVoltage = voltage;
+      } else {
+        Serial.println("error parsing doc");
+      }
       peripheral->disconnect();
       // TODO implement a better way to prevent reconnecting
       delay(20000);
