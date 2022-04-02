@@ -166,17 +166,18 @@ void setup() {
 
   network.InitializeAccessToken();
 
-  // TODO get serials of all sensors to autoConnect with
   if(strlen(network.accessToken)) {
-    char sensorQuery[] = "{\"query\":\"query getMySensors{hubViewer{sensors{id}}}\",\"variables\":{}}";
+    char sensorQuery[] = "{\"query\":\"query getMySensors{hubViewer{sensors{serial}}}\",\"variables\":{}}";
     DynamicJsonDocument doc = network.SendRequest(sensorQuery);
     if(doc["data"] && doc["data"]["hubViewer"] && doc["data"]["hubViewer"]["sensors"]) {
       const JsonArrayConst sensors = doc["data"]["hubViewer"]["sensors"];
       if(sensors.size()) {
-        // TODO set knownSensorAddrs
-        // knownSensorAddrs = sensors[0]["id"];
-        // Serial.print("Looking for existing sensor: ");
-        // Serial.println(knownSensorAddrs)
+        for(uint8_t i = 0; i < sensors.size(); i++) {
+          knownSensorAddrs[i] = String((const char*)sensors[i]["serial"]);
+          Serial.print(knownSensorAddrs[i]);
+          Serial.print(" is knownSensorAddrs at idx: ");
+          Serial.println(i);
+        }
       }
     } else {
       Serial.print("Get sensors failed, but accessToken strlen is: ");
@@ -294,6 +295,7 @@ void ScanForSensor() {
   
   if(isAddingNewSensor) {
     Serial.println("Waiting for command to connect...");
+    // TODO send sensor serial instead of 1
     commandChar.writeValue("SensorFound:1");
     memset(currentCommand.type, 0, sizeof currentCommand.type);
     memset(currentCommand.value, 0, sizeof currentCommand.value);
@@ -325,8 +327,7 @@ void ConnectToFoundSensor() {
 
   if(!isAddingNewSensor) return;
 
-  // TODO get sensor serial
-  const char sensorSerial[] = "1";
+  const char* sensorSerial = peripheral->address().c_str();
   char mutationStr[155 + strlen(sensorSerial)]{};
   sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, isOpen: true, isConnected: true, serial:\\\"%s\\\"){id}}\",\"variables\":{}}\n", sensorSerial);
   DynamicJsonDocument doc = network.SendRequest(mutationStr);
