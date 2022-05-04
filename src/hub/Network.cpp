@@ -24,7 +24,7 @@ void Network::SetAccessToken(const char newAccessToken[100]) {
     strcpy(accessToken, newAccessToken);
 }
 
-DynamicJsonDocument Network::SendRequest(char* query) {
+DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
     Serial.println("Sending request");
     Serial.println(query);
 
@@ -63,6 +63,10 @@ DynamicJsonDocument Network::SendRequest(char* query) {
     Serial.print("Commands to iterate through: ");
     Serial.println(commandsLen);
     for(uint8_t i = 0; i < commandsLen; i++) {
+        // Required so that services can be read for some reason
+        // FIXME - https://github.com/arduino-libraries/ArduinoBLE/issues/175
+        // https://github.com/arduino-libraries/ArduinoBLE/issues/236
+        BLE->available();
         memset(buffer, 0, RESPONSE_SIZE);
         size = 0;
 

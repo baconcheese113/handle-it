@@ -1,6 +1,7 @@
 #ifndef NETWORK_H
 #define NETWORK_h
 
+#include <ArduinoBLE.h>
 #include <ArduinoJson.h>
 
 // Needs to be large enough for error messages
@@ -27,7 +28,7 @@ class Network {
          * Sends a request containing query to API_URL, returns a json document with 
          * response in the "data" field if no errors, otherwise errors will be in "errors" 
         **/
-        DynamicJsonDocument SendRequest(char* query);
+        DynamicJsonDocument SendRequest(char* query, BLELocalDevice* BLE);
 };
 
 #endif
