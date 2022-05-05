@@ -26,9 +26,10 @@ BLEService hubService = BLEService(HUB_SERVICE_UUID);
 BLEStringCharacteristic commandChar(COMMAND_CHARACTERISTIC_UUID, BLERead | BLEWrite, 20);
 
 BLEDevice* peripheral;
-bool isScanning = false;
 bool isAdvertising = false;
 bool isAddingNewSensor = false;
+unsigned long scanStartTime = 0;
+unsigned long lastEventTime = 0;
 
 unsigned long pairingStartTime = 0;
 unsigned long pairButtonHoldStartTime = 0;
@@ -262,12 +263,28 @@ void ListenForPhoneCommands() {
 
 void ScanForSensor() {
   if(pairingStartTime > 0) return;
-  if(!isScanning) {
+  if(lastEventTime > 0) {
+    if(millis() < lastEventTime + 20000) {
+      Serial.print("-");
+    } else {
+      lastEventTime = 0;
+      BLE.stopAdvertise();
+      isAdvertising = false;
+      Serial.println(">\nCooldown complete");
+    }
+    return;
+  }
+  if(scanStartTime == 0) {
     // this was the first call to start scanning
     BLE.scanForName(PERIPHERAL_NAME, true);
-    isScanning = true;
+    scanStartTime = millis();
     Utilities::analogWriteRGB(255, 0, 0);
     Serial.print("Hub scanning for peripheral...");
+  } else if(millis() >= scanStartTime + 90000) {
+    Serial.println("\nScan for peripheral timed out, restarting");
+    BLE.stopScan();
+    scanStartTime = 0;
+    return;
   }
   BLEDevice scannedDevice = BLE.available();
   if(scannedDevice.localName().length() > 0) {
@@ -313,10 +330,10 @@ void ScanForSensor() {
   Serial.print("Advertised Service UUID Count: ");
   Serial.println(peripheral->advertisedServiceUuidCount());
   BLE.stopScan();
-  isScanning = false;
+  scanStartTime = 0;
   
   if(isAddingNewSensor) {
-    Serial.println("Waiting for command to connect~~~");
+    Serial.print("Waiting for command to connect~~~");
     String sensorFound = "SensorFound:";
     sensorFound.concat(peripheral->address());
     commandChar.writeValue(sensorFound);
@@ -328,6 +345,7 @@ void ScanForSensor() {
 void ConnectToFoundSensor() {
   if(isAddingNewSensor && strcmp(currentCommand.type, COMMAND_SENSOR_CONNECT) != 0) {
     // TODO handle the form timing out at this location better
+    BLE.available();
     Serial.print("~");
     return;
   }
@@ -370,8 +388,10 @@ void ConnectToFoundSensor() {
       commandChar.writeValue("SensorAdded:1");
     }
     peripheral->disconnect();
-    // TODO implement a better way to prevent reconnecting
-    delay(20000);
+    Serial.print("Cooling down to prevent peripheral reconnection---");
+    BLE.advertise();
+    isAdvertising = true;
+    lastEventTime = millis();
   } else {
     Serial.println("doc not valid");
   }
@@ -414,8 +434,10 @@ void MonitorSensor() {
       Serial.println("error parsing doc");
     }
     peripheral->disconnect();
-    // TODO implement a better way to prevent reconnecting
-    delay(20000);
+    Serial.print("Cooling down to prevent peripheral reconnection---");
+    BLE.advertise();
+    isAdvertising = true;
+    lastEventTime = millis();
   } else {
     Serial.println("Unable to read volts");
   }
@@ -446,6 +468,6 @@ void loop() {
 
   // debugging is a bit crazy 
   if(Serial.availableForWrite()) {
-    delay(400);
+    delay(200);
   }
 }
