@@ -1,4 +1,5 @@
 #include <ArduinoBLE.h>
+#include <ArduinoOTA.h>
 #include <ArduinoJson.h>
 #include <./hub/Utilities.h>
 #include <./hub/Network.h>
@@ -6,6 +7,7 @@
 #define D8 8
 #define D4 4
 
+const short VERSION = 1;
 // Serial number
 const char* DEVICE_SERIAL = "RealSensorSerial0";
 // Device name
@@ -17,13 +19,15 @@ const char* VOLT_CHARACTERISTIC_UUID = "10002A58-0000-1000-8000-00805f9b34fb";
 
 const char* HUB_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fc";
 const char* COMMAND_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fd";
+const char* TRANSFER_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fe";
 
 const char* COMMAND_START_SENSOR_SEARCH = "StartSensorSearch";
 const char* COMMAND_SENSOR_CONNECT = "SensorConnect";
 
-
+const uint16_t CHUNK_SIZE = 250;
 BLEService hubService = BLEService(HUB_SERVICE_UUID);
-BLEStringCharacteristic commandChar(COMMAND_CHARACTERISTIC_UUID, BLERead | BLEWrite, 20);
+BLEStringCharacteristic commandChar(COMMAND_CHARACTERISTIC_UUID, BLERead | BLEWrite, 30);
+BLECharacteristic transferChar(TRANSFER_CHARACTERISTIC_UUID, BLERead | BLEWrite, CHUNK_SIZE);
 
 BLEDevice* peripheral;
 bool isAdvertising = false;
@@ -50,7 +54,7 @@ void onBLEConnected(BLEDevice d) {
   
   bool dNameMatch = d.deviceName().compareTo(PERIPHERAL_NAME) == 0 || d.localName().compareTo(PERIPHERAL_NAME) == 0;
   bool peripheralNameMatch = peripheral->deviceName().compareTo(PERIPHERAL_NAME) == 0 || peripheral->localName().compareTo(PERIPHERAL_NAME) == 0;
-  if(!phone && !dNameMatch && !peripheralNameMatch) {
+  if(!dNameMatch && !peripheralNameMatch) {
     phone = new BLEDevice();
     *phone = d;
     pairingStartTime = 0;
@@ -62,17 +66,17 @@ void onBLEConnected(BLEDevice d) {
       return;
     }
     // Grab access_token from userId of connected phone
-    char rawCommand[20]{};
-    Serial.println("Trying to read userid...");
+    char rawCommand[30]{};
+    Serial.print("Trying to read userid...");
     while(strlen(rawCommand) < 1 && phone) {
       // Required to allow the phone to finish connecting properly
-      BLE.available();
+      BLE.poll();
       if(commandChar.written()) {
         String writtenVal = commandChar.value();
-        writtenVal.toCharArray(rawCommand, 20);
+        writtenVal.toCharArray(rawCommand, 30);
       }
       Serial.print(".");
-      delay(100);
+      Utilities::BLEDelay(10, &BLE);
     }
     if(!phone) return;
     Serial.print("\nUserID value: ");
@@ -146,9 +150,9 @@ void setup() {
   pinMode(D8, INPUT);
 
   Utilities::analogWriteRGB(0, 0, 0);
-  // Serial.begin(9600);
-  // while(!Serial);
-  Serial1.begin(9600);
+  Serial.begin(115200);
+  while(!Serial);
+  Serial1.begin(115200);
   while(!Serial1);
    // begin BLE initialization
   if (!BLE.begin()) {
@@ -157,10 +161,16 @@ void setup() {
     while (1);
   }
   Serial.println("Booting...");
+  Serial.print("Sketch version ");
+  Serial.print(VERSION);
+  Serial.print(". Free Memory is: ");
+  Serial.println(Utilities::freeMemory());
+
   // BLE service to advertise to phone
   BLE.setLocalName(DEVICE_NAME);
   BLE.setAdvertisedService(hubService);
   hubService.addCharacteristic(commandChar);
+  hubService.addCharacteristic(transferChar);
   BLE.addService(hubService);
 
   // Bluetooth LE connection handlers
@@ -188,8 +198,6 @@ void setup() {
       Serial.print("Get sensors failed, but accessToken strlen is: ");
       Serial.println(strlen(network.accessToken));
     }
-  } else {
-    Serial.println("No accessToken found");
   }
 }
 
@@ -227,7 +235,7 @@ void PairToPhone() {
     isAdvertising = true;  
   }
   // Must be called while pairing so characteristics are available
-  BLE.available();
+  BLE.poll();
 }
 
 void ListenForPhoneCommands() {
@@ -345,14 +353,14 @@ void ScanForSensor() {
 void ConnectToFoundSensor() {
   if(isAddingNewSensor && strcmp(currentCommand.type, COMMAND_SENSOR_CONNECT) != 0) {
     // TODO handle the form timing out at this location better
-    BLE.available();
+    BLE.poll();
     Serial.print("~");
     return;
   }
   if(!peripheral->connect()) {
     Utilities::analogWriteRGB(255, 0, 0);
     Serial.println("\nFailed to connect retrying....");
-    delay(1000);
+    Utilities::BLEDelay(1000, &BLE);
     return;
   }
 
@@ -443,9 +451,80 @@ void MonitorSensor() {
   }
 }
 
+void FirmwareUpdate() {
+  unsigned long fileLength = strtoul(currentCommand.value, NULL, 10);
+  if (fileLength == 0) {
+    Serial.println("Phone didn't provide fileLength with command. Can't continue with update.");
+    return;
+  }
+  Serial.print("Phone returned update file of size ");
+  Serial.print(fileLength);
+  Serial.println(" bytes");
+
+  if (!InternalStorage.open(fileLength)) {
+    Serial.println("There is not enough space to store the update. Can't continue with update.");
+    return;
+  }
+
+  uint8_t buff[CHUNK_SIZE];
+  uint16_t chunkLen = 0;
+  uint8_t emptyByteArr[1] = {0x00};
+  while (fileLength > 0 && phone && phone->connected()) {
+    BLE.available();
+    chunkLen = transferChar.valueLength();
+    if(chunkLen < min(CHUNK_SIZE, fileLength)) {
+      continue;
+    }
+    transferChar.readValue(buff, chunkLen);
+    Serial.print("\nValue length is ");
+    Serial.print(chunkLen);
+    Serial.print(" and content size is ");
+    Serial.print(sizeof(buff));
+    Serial.print(" and Free Memory is: ");
+    Serial.println(Utilities::freeMemory());
+    transferChar.writeValue(emptyByteArr, 1, true);
+    BLE.available();
+
+
+    for(uint8_t i = 0; i < chunkLen; i++) {
+      InternalStorage.write(buff[i]);
+      fileLength--;
+    }
+    Serial.print("Bytes left to write: ");
+    Serial.println(fileLength);
+  }
+  InternalStorage.close();
+  if (fileLength > 0) {
+    Serial.print("Timeout downloading update file at ");
+    Serial.print(fileLength);
+    Serial.println(" bytes. Can't continue with update.");
+    return;
+  }
+  
+  String hubCommand = "HubUpdateEnd:";
+  hubCommand.concat(VERSION + 1);
+  Serial.print("Writing ");
+  Serial.println(hubCommand);
+  commandChar.writeValue(hubCommand);
+  BLE.poll();
+  delay(10);
+  BLE.poll();
+  Serial.println("Stalling...");
+
+  Utilities::BLEDelay(2000, &BLE);
+
+  Serial.println("Sketch update apply and reset.");
+  Serial.flush();
+  InternalStorage.apply(); // this doesn't return
+}
+
 void loop() {
 
   CheckInput();
+
+  if(strcmp(currentCommand.type, "StartHubUpdate") == 0) {
+    FirmwareUpdate();
+  }
 
   // Hub has entered pairing mode
   if(pairingStartTime > 0) {

@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <ArduinoBLE.h>
 
 struct Command {
     char type[30]{};
@@ -16,4 +17,14 @@ namespace Utilities {
      * Prints an error message if unable to parse
     **/
     Command parseRawCommand(char* rawCmd);
+
+    /**
+     * Returns space between the heap and the stack, ignores deallocated memory
+     */
+    int freeMemory();
+
+    /**
+     * Delays for milliseconds while continuously polling
+     */
+    void BLEDelay(uint16_t milliseconds, BLELocalDevice* BLE);
 }

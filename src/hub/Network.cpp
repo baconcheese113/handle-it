@@ -66,7 +66,7 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
         // Required so that services can be read for some reason
         // FIXME - https://github.com/arduino-libraries/ArduinoBLE/issues/175
         // https://github.com/arduino-libraries/ArduinoBLE/issues/236
-        BLE->available();
+        BLE->poll();
         memset(buffer, 0, RESPONSE_SIZE);
         size = 0;
 
@@ -79,6 +79,7 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
         }
         timeout = millis() + 10000;
         while(millis() < timeout) {
+            BLE->poll();
             if(Serial1.available() < 1) continue;
             buffer[size] = Serial1.read();
             Serial.write(buffer[size]);
@@ -89,8 +90,9 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
                 && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K' // OK
             ) {
                 if(i == AT_HTTPACTION_IDX) { // special case for AT+HTTPACTION response responding OK before query resolve :/
-                    while(Serial1.available() < 1 && millis() < timeout);
+                    while(Serial1.available() < 1 && millis() < timeout) { BLE->poll(); }
                     while(Serial1.available() > 0 && millis() < timeout) {
+                        BLE->poll();
                         buffer[size] = Serial1.read();
                         Serial.write(buffer[size]);
                         size++;
@@ -100,6 +102,7 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
                 if(i == AT_HTTPREAD_IDX) { // special case for AT+HTTPREAD to extract the response
                     int16_t responseIdxStart = -1;
                     for(int idx = 0; idx < size - 7; idx++) {
+                        BLE->poll();
                         if(responseIdxStart == -1 && buffer[idx] == '{') responseIdxStart = idx;
                         if(responseIdxStart > -1) response[idx - responseIdxStart] = buffer[idx];
                         if(idx == size - 8) response[idx - responseIdxStart + 1] = '\0';
