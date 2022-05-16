@@ -2,6 +2,7 @@
 #include <./conf.cpp>
 #include <./hub/Network.h>
 
+// TODO store token in EEPROM
 FlashStorage(flashAccessToken, const char*);
 
 uint8_t AT_HTTPDATA_IDX = 7;

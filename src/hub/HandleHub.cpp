@@ -7,7 +7,7 @@
 #define D8 8
 #define D4 4
 
-const short VERSION = 1;
+const int VERSION = 1;
 // Serial number
 const char* DEVICE_SERIAL = "RealSensorSerial0";
 // Device name
@@ -20,6 +20,7 @@ const char* VOLT_CHARACTERISTIC_UUID = "10002A58-0000-1000-8000-00805f9b34fb";
 const char* HUB_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fc";
 const char* COMMAND_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fd";
 const char* TRANSFER_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fe";
+const char* FIRMWARE_CHARACTERISTIC_UUID = "2A26";
 
 const char* COMMAND_START_SENSOR_SEARCH = "StartSensorSearch";
 const char* COMMAND_SENSOR_CONNECT = "SensorConnect";
@@ -28,6 +29,7 @@ const uint16_t CHUNK_SIZE = 250;
 BLEService hubService = BLEService(HUB_SERVICE_UUID);
 BLEStringCharacteristic commandChar(COMMAND_CHARACTERISTIC_UUID, BLERead | BLEWrite, 30);
 BLECharacteristic transferChar(TRANSFER_CHARACTERISTIC_UUID, BLERead | BLEWrite, CHUNK_SIZE);
+BLEIntCharacteristic firmwareChar(FIRMWARE_CHARACTERISTIC_UUID, BLERead);
 
 BLEDevice* peripheral;
 bool isAdvertising = false;
@@ -171,7 +173,9 @@ void setup() {
   BLE.setAdvertisedService(hubService);
   hubService.addCharacteristic(commandChar);
   hubService.addCharacteristic(transferChar);
+  hubService.addCharacteristic(firmwareChar);
   BLE.addService(hubService);
+  firmwareChar.writeValue(VERSION);
 
   // Bluetooth LE connection handlers
   BLE.setEventHandler(BLEConnected, onBLEConnected);
