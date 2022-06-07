@@ -1,11 +1,27 @@
 #include <ArduinoBLE.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
+#include <wiring_private.h>
 #include <./hub/Utilities.h>
 #include <./hub/Network.h>
+#include <TinyGPSPlus.h>
 
-#define D8 8
-#define D4 4
+// Digital pins
+#define PAIR_PIN  10
+#define GPS_RX    5
+#define GPS_TX    6
+// Analog pins
+#define BATT_PIN  0
+
+// GPS Module
+Uart gpsSerial(&sercom0, GPS_RX, GPS_TX, SERCOM_RX_PAD_1, UART_TX_PAD_0);
+
+TinyGPSPlus gps;
+
+void SERCOM0_Handler()
+{
+  gpsSerial.IrqHandler();
+}
 
 const int VERSION = 1;
 // Serial number
@@ -49,6 +65,10 @@ String lastReadCommand = "";
 String knownSensorAddrs[10];
 uint8_t knownSensorAddrsLen = 0;
 int32_t lastReadVoltage = 0;
+
+unsigned long lastGPSTime = 0;
+double lastSentLat = 0;
+double lastSentLng = 0;
 
 void onBLEConnected(BLEDevice d) {
   Serial.print(">>> BLEConnected to: ");
@@ -148,21 +168,27 @@ void onBLEDisconnected(BLEDevice d) {
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(D4, OUTPUT);
-  pinMode(D8, INPUT);
+  pinMode(PAIR_PIN, INPUT);
 
   Utilities::analogWriteRGB(0, 0, 0);
   Serial.begin(115200);
   while(!Serial);
+  Serial.println("Booting...");
   Serial1.begin(115200);
   while(!Serial1);
+  Serial.println("Serial1 started at 115200 baud");
+  pinPeripheral(GPS_RX, PIO_SERCOM_ALT);
+  pinPeripheral(GPS_TX, PIO_SERCOM_ALT);
+  gpsSerial.begin(9600);
+  while(!gpsSerial);
+  Serial.println("gpsSerial started at 9600 baud");
+
    // begin BLE initialization
   if (!BLE.begin()) {
     Serial.println("starting BLE failed!");
 
     while (1);
   }
-  Serial.println("Booting...");
   Serial.print("Sketch version ");
   Serial.print(VERSION);
   Serial.print(". Free Memory is: ");
@@ -207,7 +233,7 @@ void setup() {
 
 void CheckInput() {
   
-  bool pressingPairButton = digitalRead(D8) == HIGH;
+  bool pressingPairButton = digitalRead(PAIR_PIN) == HIGH;
   if(!pressingPairButton) {
     pairButtonHoldStartTime = 0;
     return;
@@ -522,6 +548,66 @@ void FirmwareUpdate() {
   InternalStorage.apply(); // this doesn't return
 }
 
+void UpdateGPS() {
+  while(gpsSerial.available() > 0) {
+    gps.encode(gpsSerial.read());
+  }
+  if(!strlen(network.accessToken)) return;
+  if(millis() < lastGPSTime + 60000) return;
+  lastGPSTime = millis();
+  Serial.println("\n\r*****Updating GPS location*****");
+  if(!gps.location.isValid()) {
+    Serial.println("Location invalid");
+    return;
+  }
+  if(!gps.location.isUpdated()) {
+    Serial.println("Location hasn't been updated");
+    return;
+  }
+  
+  Serial.print("Location: ");
+  Serial.print(gps.location.isUpdated());
+  Serial.print(", HDOP: ");
+  Serial.print(gps.hdop.isUpdated());
+  Serial.print(", Speed: ");
+  Serial.print(gps.speed.isUpdated());
+  Serial.print(", Course: ");
+  Serial.println(gps.course.isUpdated());
+
+  Serial.print("Latitude: ");
+  Serial.print(gps.location.lat(), 5);
+  Serial.print(", Longitude: ");
+  Serial.print(gps.location.lng(), 5);
+  Serial.print(", HDOP(m): ");
+  Serial.print(gps.hdop.hdop());
+  Serial.print(", Speed(kmph): ");
+  Serial.print(gps.speed.kmph());
+  Serial.print(", Course(deg): ");
+  Serial.print(gps.course.deg());
+  Serial.print(", Age: ");
+  Serial.println(gps.location.age());
+
+  double dist = gps.distanceBetween(gps.location.lat(), gps.location.lng(), lastSentLat, lastSentLng);
+  if(dist < 20) {
+    Serial.print("New location is less than 20m away from previously sent location, aborting. Distance(m): ");
+    Serial.println(dist);
+    return;
+  }
+
+  char createLocation[200]{};
+  sprintf(createLocation, "{\"query\":\"mutation CreateLocation{createLocation(lat:%.5f, lng: %.5f, hdop: %.2f, speed: %.2f, course: %.2f, age: %lu){ id }}\",\"variables\":{}}\n", gps.location.lat(), gps.location.lng(), gps.hdop.hdop(), gps.speed.kmph(), gps.course.deg(), gps.location.age());
+  DynamicJsonDocument doc = network.SendRequest(createLocation, &BLE);
+  if(doc["data"] && doc["data"]["createLocation"]) {
+    const uint8_t id = (const uint8_t)(doc["data"]["createLocation"]["id"]);
+    Serial.print("created location id is: ");
+    Serial.println(id);
+    lastSentLat = gps.location.lat();
+    lastSentLng = gps.location.lng();
+  } else {
+    Serial.println("error parsing doc");
+  }
+}
+
 void loop() {
 
   CheckInput();
@@ -548,6 +634,9 @@ void loop() {
   else {
     MonitorSensor();
   }
+
+  // Update GPS
+  UpdateGPS();
 
   // debugging is a bit crazy 
   if(Serial.availableForWrite()) {

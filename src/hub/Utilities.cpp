@@ -1,8 +1,8 @@
 #include<Arduino.h>
 #include <./hub/Utilities.h>
 #define RGB_R  9
-#define RGB_G  3
-#define RGB_B  2
+#define RGB_G  8
+#define RGB_B  7
 
 namespace Utilities {
     void analogWriteRGB(u_int8_t r, u_int8_t g, u_int8_t b) {
