@@ -33,6 +33,9 @@ const char* PERIPHERAL_NAME = "HandleIt Client";
 const char* SENSOR_SERVICE_UUID = "1000181a-0000-1000-8000-00805f9b34fb";
 const char* VOLT_CHARACTERISTIC_UUID = "10002A58-0000-1000-8000-00805f9b34fb";
 
+const char* BATTERY_SERVICE_UUID = "0000180f-0000-1000-8000-00805f9b34fb";
+const char* BATTERY_LEVEL_CHARACTERISTIC_UUID = "00002a19-0000-1000-8000-00805f9b34fb";
+
 const char* HUB_SERVICE_UUID = "0000181a-0000-1000-8000-00805f9b34fc";
 const char* COMMAND_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fd";
 const char* TRANSFER_CHARACTERISTIC_UUID = "00002A58-0000-1000-8000-00805f9b34fe";
@@ -46,6 +49,9 @@ BLEService hubService = BLEService(HUB_SERVICE_UUID);
 BLEStringCharacteristic commandChar(COMMAND_CHARACTERISTIC_UUID, BLERead | BLEWrite, 30);
 BLECharacteristic transferChar(TRANSFER_CHARACTERISTIC_UUID, BLERead | BLEWrite, CHUNK_SIZE);
 BLEIntCharacteristic firmwareChar(FIRMWARE_CHARACTERISTIC_UUID, BLERead);
+
+BLEService battService = BLEService(BATTERY_SERVICE_UUID);
+BLEIntCharacteristic battLevelChar(BATTERY_LEVEL_CHARACTERISTIC_UUID, BLERead | BLEWrite);
 
 BLEDevice* peripheral;
 bool isAdvertising = false;
@@ -202,6 +208,8 @@ void setup() {
   hubService.addCharacteristic(firmwareChar);
   BLE.addService(hubService);
   firmwareChar.writeValue(VERSION);
+  battService.addCharacteristic(battLevelChar);
+  BLE.addService(battService);
 
   // Bluetooth LE connection handlers
   BLE.setEventHandler(BLEConnected, onBLEConnected);
@@ -299,6 +307,22 @@ void ListenForPhoneCommands() {
   Serial.println(currentCommand.value);
 }
 
+void UpdateBatteryLevel() {
+  int avgVoltage = 0;
+  uint8_t sampleSize = 30;
+  for(uint8_t i = 0; i < sampleSize; i++) {
+    avgVoltage += analogRead(BATT_PIN);
+  }
+  avgVoltage /= sampleSize;
+  int8_t rawLevel = (int8_t) map(avgVoltage, 760, 860, 0, 100);
+  u_int8_t level = max(0, min(rawLevel, 100));
+  Serial.print("avgVoltage is: ");
+  Serial.print(avgVoltage);
+  Serial.print(", level: ");
+  Serial.println(level);
+  battLevelChar.writeValue(level);
+}
+
 void ScanForSensor() {
   if(pairingStartTime > 0) return;
   if(lastEventTime > 0) {
@@ -314,6 +338,7 @@ void ScanForSensor() {
   }
   if(scanStartTime == 0) {
     // this was the first call to start scanning
+    UpdateBatteryLevel();
     BLE.scanForName(PERIPHERAL_NAME, true);
     scanStartTime = millis();
     Utilities::analogWriteRGB(255, 0, 0);
