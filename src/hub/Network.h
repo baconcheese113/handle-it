@@ -29,6 +29,11 @@ class Network {
          * response in the "data" field if no errors, otherwise errors will be in "errors" 
         **/
         DynamicJsonDocument SendRequest(char* query, BLELocalDevice* BLE);
+
+        /**
+         * Gets IMEI string from the SIM module and stores it into provided buffer
+        **/
+        void GetImei(char* imeiBuffer);
 };
 
 #endif

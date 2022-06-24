@@ -24,9 +24,7 @@ void SERCOM0_Handler()
 }
 
 const int VERSION = 1;
-// Serial number
-const char* DEVICE_SERIAL = "RealSensorSerial0";
-// Device name
+
 const char* DEVICE_NAME = "HandleIt Hub";
 
 const char* PERIPHERAL_NAME = "HandleIt Client";
@@ -52,6 +50,8 @@ BLEIntCharacteristic firmwareChar(FIRMWARE_CHARACTERISTIC_UUID, BLERead);
 
 BLEService battService = BLEService(BATTERY_SERVICE_UUID);
 BLEIntCharacteristic battLevelChar(BATTERY_LEVEL_CHARACTERISTIC_UUID, BLERead | BLEWrite);
+
+char deviceImei[20]{};
 
 BLEDevice* peripheral;
 bool isAdvertising = false;
@@ -127,8 +127,8 @@ void onBLEConnected(BLEDevice d) {
     } else {
       Serial.println("command.type is UserId");
     }
-    char loginMutationStr[100 + strlen(command.value) + strlen(DEVICE_SERIAL)]{};
-    sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\")}\",\"variables\":{}}", command.value, DEVICE_SERIAL);
+    char loginMutationStr[100 + strlen(command.value) + strlen(deviceImei)]{};
+    sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\")}\",\"variables\":{}}", command.value, deviceImei);
     DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr, &BLE);
     if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
       const char* token = (const char *)(loginDoc["data"]["loginAsHub"]);
@@ -192,11 +192,11 @@ void setup() {
   Serial1.begin(115200);
   while(!Serial1);
   Serial.println("Serial1 started at 115200 baud");
-  pinPeripheral(GPS_RX, PIO_SERCOM_ALT);
-  pinPeripheral(GPS_TX, PIO_SERCOM_ALT);
-  gpsSerial.begin(9600);
-  while(!gpsSerial);
-  Serial.println("gpsSerial started at 9600 baud");
+  while(strlen(deviceImei) < 1) {
+    network.GetImei(deviceImei);
+    Serial.print("Device IMEI: ");
+    Serial.println(deviceImei);
+  }
 
    // begin BLE initialization
   if (!BLE.begin()) {

@@ -134,6 +134,39 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
     return doc;
 }
 
+void Network::GetImei(char* imeiBuffer) {
+    memset(buffer, 0, RESPONSE_SIZE);
+    uint8_t size = 0;
+    char command[] = "AT+GSN\r";
+    Serial1.write(command);
+    Serial1.flush();
+    unsigned long timeout = millis() + 2000;
+    while (timeout > millis())
+    {
+        if(Serial1.available()) {
+            buffer[size] = Serial1.read();
+            size++;
+        }
+        if(size >= 6
+                && buffer[size - 1] == 10 
+                && buffer[size - 2] == 13
+                && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K') // OK
+        {
+            buffer[size] = '\0';
+            uint8_t imeiLen = size - strlen(command) - 10;
+            strncpy(imeiBuffer, buffer + strlen(command) + 2, imeiLen);
+            imeiBuffer[imeiLen] = '\0';
+            return;
+        }
+    }
+    
+}
+// IMEI example
+// 065 084 043 071 083 078 013 013 010 
+// 056 054 057 057 058 049 048 053 053 057 057 055 056 057 049 013 010
+// 013 010
+// 079 075 013 010
+
 // https://robu.in/sim800l-interfacing-with-arduino/
 // https://github.com/stephaneAG/SIM800L
 // AT+SAPBR=3,1,"Contype","GPRS"
