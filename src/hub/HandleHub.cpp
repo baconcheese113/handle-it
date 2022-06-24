@@ -128,7 +128,7 @@ void onBLEConnected(BLEDevice d) {
       Serial.println("command.type is UserId");
     }
     char loginMutationStr[100 + strlen(command.value) + strlen(DEVICE_SERIAL)]{};
-    sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\")}\",\"variables\":{}}\n", command.value, DEVICE_SERIAL);
+    sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\")}\",\"variables\":{}}", command.value, DEVICE_SERIAL);
     DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr, &BLE);
     if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
       const char* token = (const char *)(loginDoc["data"]["loginAsHub"]);
@@ -440,7 +440,7 @@ void ConnectToFoundSensor() {
 
   const char* sensorSerial = peripheral->address().c_str();
   char mutationStr[155 + strlen(sensorSerial)]{};
-  sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, isOpen: true, isConnected: true, serial:\\\"%s\\\"){id}}\",\"variables\":{}}\n", sensorSerial);
+  sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, isOpen: true, isConnected: true, serial:\\\"%s\\\"){id}}\",\"variables\":{}}", sensorSerial);
   DynamicJsonDocument doc = network.SendRequest(mutationStr, &BLE);
   if(doc["data"] && doc["data"]["createSensor"]) {
     const uint8_t id = (const uint8_t)(doc["data"]["createSensor"]["id"]);
@@ -621,7 +621,7 @@ void UpdateGPS() {
   }
 
   char createLocation[200]{};
-  sprintf(createLocation, "{\"query\":\"mutation CreateLocation{createLocation(lat:%.5f, lng: %.5f, hdop: %.2f, speed: %.2f, course: %.2f, age: %lu){ id }}\",\"variables\":{}}\n", gps.location.lat(), gps.location.lng(), gps.hdop.hdop(), gps.speed.kmph(), gps.course.deg(), gps.location.age());
+  sprintf(createLocation, "{\"query\":\"mutation CreateLocation{createLocation(lat:%.5f, lng: %.5f, hdop: %.2f, speed: %.2f, course: %.2f, age: %lu){ id }}\",\"variables\":{}}", gps.location.lat(), gps.location.lng(), gps.hdop.hdop(), gps.speed.kmph(), gps.course.deg(), gps.location.age());
   DynamicJsonDocument doc = network.SendRequest(createLocation, &BLE);
   if(doc["data"] && doc["data"]["createLocation"]) {
     const uint8_t id = (const uint8_t)(doc["data"]["createLocation"]["id"]);

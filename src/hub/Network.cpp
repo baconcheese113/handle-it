@@ -31,30 +31,30 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
 
     char authCommand[55 + strlen(accessToken)]{};
     if(strlen(accessToken) > 0) {
-        sprintf(authCommand, "AT+HTTPPARA=\"USERDATA\",\"Authorization:Bearer %s\"\n", accessToken);
+        sprintf(authCommand, "AT+HTTPPARA=\"USERDATA\",\"Authorization:Bearer %s\"", accessToken);
     } else {
-        strcpy(authCommand, "AT+HTTPPARA=\"USERDATA\",\"\"\n");
+        strcpy(authCommand, "AT+HTTPPARA=\"USERDATA\",\"\"");
     }
 
     char urlCommand[30 + strlen(API_URL)]{};
-    sprintf(urlCommand, "AT+HTTPPARA=\"URL\",\"%s\"\n", API_URL);
+    sprintf(urlCommand, "AT+HTTPPARA=\"URL\",\"%s\"", API_URL);
 
     char lenCommand[30]{};
-    sprintf(lenCommand, "AT+HTTPDATA=%d,%d\n", strlen(query), 5000);
+    sprintf(lenCommand, "AT+HTTPDATA=%d,%d", strlen(query), 5000);
 
     const char* const commands[] = {
-        "AT+SAPBR=3,1,\"Contype\",\"GPRS\"\n",
-        "AT+SAPBR=1,1\n",
-        "AT+HTTPINIT\n",
-        "AT+HTTPPARA=\"CID\",1\n",
+        "AT+SAPBR=3,1,\"Contype\",\"GPRS\"",
+        "AT+SAPBR=1,1",
+        "AT+HTTPINIT",
+        "AT+HTTPPARA=\"CID\",1",
         authCommand,
         urlCommand,
-        "AT+HTTPPARA=\"CONTENT\",\"application/json\"\n",
+        "AT+HTTPPARA=\"CONTENT\",\"application/json\"",
         lenCommand,
-        "AT+HTTPACTION=1\n",
-        "AT+HTTPREAD\n",
-        "AT+HTTPTERM\n",
-        "AT+SAPBR=0,1\n",
+        "AT+HTTPACTION=1",
+        "AT+HTTPREAD",
+        "AT+HTTPTERM",
+        "AT+SAPBR=0,1",
     };
 
     char response[RESPONSE_SIZE]{};
@@ -71,7 +71,7 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
         memset(buffer, 0, RESPONSE_SIZE);
         size = 0;
 
-        Serial1.write(commands[i]);
+        Serial1.println(commands[i]);
         Serial1.flush();
         if(i == AT_HTTPDATA_IDX) { // send query to HTTPDATA command
             delay(10);
