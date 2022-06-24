@@ -76,6 +76,17 @@ unsigned long lastGPSTime = 0;
 double lastSentLat = 0;
 double lastSentLng = 0;
 
+void setPairMode(bool turnOn) {
+  if(turnOn && !isAdvertising) {
+    BLE.advertise();
+    isAdvertising = true;
+  } else if(!turnOn && isAdvertising) {
+    pairingStartTime = 0;
+    BLE.stopAdvertise();
+    isAdvertising = false;
+  }
+}
+
 void onBLEConnected(BLEDevice d) {
   Serial.print(">>> BLEConnected to: ");
   Serial.println(d.address());
@@ -85,9 +96,7 @@ void onBLEConnected(BLEDevice d) {
   if(!dNameMatch && !peripheralNameMatch) {
     phone = new BLEDevice();
     *phone = d;
-    pairingStartTime = 0;
-    BLE.stopAdvertise();
-    isAdvertising = false;
+    setPairMode(false);
     digitalWrite(LED_BUILTIN, HIGH);
     if(strlen(network.accessToken) > 0) {
       Serial.println("Already have accessToken");
@@ -259,19 +268,14 @@ void CheckInput() {
 void PairToPhone() {
   if(millis() > pairingStartTime + 60000) {
     // pairing timed out
-    pairingStartTime = 0;
-    BLE.stopAdvertise();
-    isAdvertising = false;
+    setPairMode(false);
     Utilities::analogWriteRGB(255, 0, 0);
     return;
   }
   if(millis() / 1000 % 2) Utilities::analogWriteRGB(75, 0, 130);
   else Utilities::analogWriteRGB(75, 0, 80);
 
-  if(!isAdvertising) {
-    BLE.advertise();
-    isAdvertising = true;  
-  }
+  setPairMode(true);
   // Must be called while pairing so characteristics are available
   BLE.poll();
 }
@@ -330,8 +334,7 @@ void ScanForSensor() {
       Serial.print("-");
     } else {
       lastEventTime = 0;
-      BLE.stopAdvertise();
-      isAdvertising = false;
+      setPairMode(false);
       Serial.println(">\nCooldown complete");
     }
     return;
@@ -452,8 +455,7 @@ void ConnectToFoundSensor() {
     }
     peripheral->disconnect();
     Serial.print("Cooling down to prevent peripheral reconnection---");
-    BLE.advertise();
-    isAdvertising = true;
+    setPairMode(true);
     lastEventTime = millis();
   } else {
     Serial.println("doc not valid");
@@ -498,8 +500,7 @@ void MonitorSensor() {
     }
     peripheral->disconnect();
     Serial.print("Cooling down to prevent peripheral reconnection---");
-    BLE.advertise();
-    isAdvertising = true;
+    setPairMode(true);
     lastEventTime = millis();
   } else {
     Serial.println("Unable to read volts");
