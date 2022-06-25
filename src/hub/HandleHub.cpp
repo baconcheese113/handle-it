@@ -662,7 +662,7 @@ void loop() {
   }
 
   // Update GPS
-  UpdateGPS();
+  // UpdateGPS();
 
   // debugging is a bit crazy 
   if(Serial.availableForWrite()) {

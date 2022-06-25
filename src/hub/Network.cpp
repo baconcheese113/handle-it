@@ -1,4 +1,5 @@
 #include <FlashStorage.h>
+#include <./hub/Utilities.h>
 #include <./conf.cpp>
 #include <./hub/Network.h>
 
@@ -26,6 +27,7 @@ void Network::SetAccessToken(const char newAccessToken[100]) {
 }
 
 DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
+    Utilities::analogWriteRGB(0, 0, 60);
     Serial.println("Sending request");
     Serial.println(query);
 
@@ -43,7 +45,8 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
     sprintf(lenCommand, "AT+HTTPDATA=%d,%d", strlen(query), 5000);
 
     const char* const commands[] = {
-        "AT+SAPBR=3,1,\"Contype\",\"GPRS\"",
+        "AT+SAPBR=3,1,\"APN\",\"hologram\"",
+        // "AT+SAPBR=3,1,\"Contype\",\"GPRS\"",
         "AT+SAPBR=1,1",
         "AT+HTTPINIT",
         "AT+HTTPPARA=\"CID\",1",
@@ -74,11 +77,11 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
         Serial1.println(commands[i]);
         Serial1.flush();
         if(i == AT_HTTPDATA_IDX) { // send query to HTTPDATA command
-            delay(10);
+            delay(900); // receive NO CARRIER response without waiting this amount
             Serial1.write(query);
             Serial1.flush();
         }
-        timeout = millis() + 10000;
+        timeout = millis() + 5000;
         while(millis() < timeout) {
             BLE->poll();
             if(Serial1.available() < 1) continue;
@@ -106,11 +109,15 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
                         BLE->poll();
                         if(responseIdxStart == -1 && buffer[idx] == '{') responseIdxStart = idx;
                         if(responseIdxStart > -1) response[idx - responseIdxStart] = buffer[idx];
-                        if(idx == size - 8) response[idx - responseIdxStart + 1] = '\0';
+                        if(responseIdxStart > -1 && idx == size - 8) response[idx - responseIdxStart + 1] = '\0';
                     }
                 }
                 break;
             }
+        }
+        if(millis() >= timeout) {
+            Utilities::analogWriteRGB(70, 5, 0);
+            Serial.println(">>Timeout<<");
         }
     }
     Serial.print("Request complete\nResponse is: ");
@@ -121,6 +128,8 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
     if (error) {
         Serial.print("deserializeJson() failed: ");
         Serial.println(error.f_str());
+    } else {
+        Utilities::analogWriteRGB(0, 25, 0);
     }
     char substr[10];
     memcpy(substr, response, 10);
