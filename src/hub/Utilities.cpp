@@ -61,4 +61,61 @@ namespace Utilities {
             delay(1);
         }
     }
+
+    bool readUntilResp(const char* head, char* buffer) {
+        bool didReadHead = strlen(head) == 0;
+        uint16_t size = 0;
+        uint16_t idx = 0;
+        char c;
+        unsigned long timeout = millis() + 2000;
+        while (millis() < timeout)
+        {
+            while(Serial1.available()) {
+                c = Serial1.read();
+                if(!didReadHead) {
+                    if(c != head[idx]) {
+                        Serial.println("Head doesn't match");
+                        return false;
+                    }
+                    if(idx == strlen(head) - 1) didReadHead = true;
+                } else {
+                    buffer[size] = c;
+                    size++;
+                }
+                idx++;
+            }
+            if(size >= 6
+                && buffer[size - 1] == 10 
+                && buffer[size - 2] == 13
+                && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K'
+            ) {
+                // OK response
+                buffer[size - 8] = '\0';
+                return true;
+            }
+            if(size >= 8
+                && buffer[size - 1] == 10 
+                && buffer[size - 2] == 13
+                && buffer[size - 8] == 10 && buffer[size - 7] == 'E' && buffer[size - 6] == 'R' && buffer[size - 5] == 'R' && buffer[size - 4] == 'O' && buffer[size - 3] == 'R'
+            ) {
+                // ERROR response
+                buffer[size - 9] = '\0';
+                Serial.println("ERROR received");
+                return false;
+            }
+        }
+        Serial.println(">>TIMEOUT<<");
+        return false;
+    }
+    
+    void printBytes(char* buffer) {
+        Serial.println("\n===== Printing Bytes =======");
+        for(uint16_t idx = 0; idx < strlen(buffer); idx++) {
+            Serial.print("0");
+            Serial.print((uint8_t)buffer[idx]);
+            if(buffer[idx] == '\n') Serial.println(""); 
+            else Serial.print(" ");
+        }
+        Serial.println("\n===== End Bytes =======");
+    }
 }

@@ -30,6 +30,17 @@ namespace Utilities {
      * Delays for milliseconds while continuously polling
      */
     void bleDelay(uint16_t milliseconds, BLELocalDevice* BLE);
+
+    /**
+     * Reads n bytes into buffer (ignoring head) from Serial1
+     * Returns true if OK received, false otherwise
+    **/
+    bool readUntilResp(const char* head, char* buffer);
+
+    /**
+     * Prints a char array as bytes up to the termination character
+    **/
+   void printBytes(char* buffer);
 }
 
 #endif

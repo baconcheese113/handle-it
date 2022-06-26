@@ -1,27 +1,14 @@
 #include <ArduinoBLE.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
-#include <wiring_private.h>
 #include <./hub/Utilities.h>
 #include <./hub/Network.h>
-#include <TinyGPSPlus.h>
+#include <./hub/Location.h>
 
 // Digital pins
 #define PAIR_PIN  10
-#define GPS_RX    5
-#define GPS_TX    6
 // Analog pins
 #define BATT_PIN  0
-
-// GPS Module
-Uart gpsSerial(&sercom0, GPS_RX, GPS_TX, SERCOM_RX_PAD_1, UART_TX_PAD_0);
-
-TinyGPSPlus gps;
-
-void SERCOM0_Handler()
-{
-  gpsSerial.IrqHandler();
-}
 
 const int VERSION = 1;
 
@@ -64,6 +51,7 @@ unsigned long pairButtonHoldStartTime = 0;
 BLEDevice* phone;
 
 Network network;
+Location location;
 
 Command currentCommand;
 String lastReadCommand = "";
@@ -71,10 +59,6 @@ String lastReadCommand = "";
 String knownSensorAddrs[10];
 uint8_t knownSensorAddrsLen = 0;
 int32_t lastReadVoltage = 0;
-
-unsigned long lastGPSTime = 0;
-double lastSentLat = 0;
-double lastSentLng = 0;
 
 void setPairMode(bool turnOn) {
   if(turnOn && !isAdvertising) {
@@ -192,10 +176,17 @@ void setup() {
   Serial1.begin(115200);
   while(!Serial1);
   Serial.println("Serial1 started at 115200 baud");
+  while(Serial1.available()) Serial1.read();
   while(strlen(deviceImei) < 1) {
     network.GetImei(deviceImei);
     Serial.print("Device IMEI: ");
     Serial.println(deviceImei);
+  }
+  Serial1.println("AT+CGNSPWR=1");
+  Serial1.flush();
+  delay(3);
+  while(Serial1.available()) {
+    Serial.write(Serial1.read());
   }
 
    // begin BLE initialization
@@ -575,60 +566,42 @@ void FirmwareUpdate() {
 }
 
 void UpdateGPS() {
-  while(gpsSerial.available() > 0) {
-    gps.encode(gpsSerial.read());
-  }
   if(!strlen(network.accessToken)) return;
-  if(millis() < lastGPSTime + 60000) return;
-  lastGPSTime = millis();
+  if(millis() < location.lastGPSTime + 60000) return;
+  location.lastGPSTime = millis();
+  Serial1.println("AT+CGNSINF");
+  Serial1.flush();
+
+  char infBuffer[200]{};
+  memset(infBuffer, 0, 200);
+  bool didRead = Utilities::readUntilResp("AT+CGNSINF\r\r\n+CGNSINF: ", infBuffer);
+  if(!didRead) return;
+
+  Serial.print("\nBuffer: ");
+  Serial.println(infBuffer);
+  LocReading reading = location.parseInf(infBuffer);
   Serial.println("\n\r*****Updating GPS location*****");
-  if(!gps.location.isValid()) {
-    Serial.println("Location invalid");
+  if(!reading.hasFix) {
+    Serial.println("No GPS fix yet, aborting");
     return;
   }
-  if(!gps.location.isUpdated()) {
-    Serial.println("Location hasn't been updated");
-    return;
-  }
-  
-  Serial.print("Location: ");
-  Serial.print(gps.location.isUpdated());
-  Serial.print(", HDOP: ");
-  Serial.print(gps.hdop.isUpdated());
-  Serial.print(", Speed: ");
-  Serial.print(gps.speed.isUpdated());
-  Serial.print(", Course: ");
-  Serial.println(gps.course.isUpdated());
+  location.printLocReading(reading);
 
-  Serial.print("Latitude: ");
-  Serial.print(gps.location.lat(), 5);
-  Serial.print(", Longitude: ");
-  Serial.print(gps.location.lng(), 5);
-  Serial.print(", HDOP(m): ");
-  Serial.print(gps.hdop.hdop());
-  Serial.print(", Speed(kmph): ");
-  Serial.print(gps.speed.kmph());
-  Serial.print(", Course(deg): ");
-  Serial.print(gps.course.deg());
-  Serial.print(", Age: ");
-  Serial.println(gps.location.age());
-
-  double dist = gps.distanceBetween(gps.location.lat(), gps.location.lng(), lastSentLat, lastSentLng);
+  double dist = location.distanceFromLastPoint(reading.lat, reading.lng);
   if(dist < 20) {
-    Serial.print("New location is less than 20m away from previously sent location, aborting. Distance(m): ");
+    Serial.print("New location is less than 20m away from previously sent location, aborting.\nDistance(m): ");
     Serial.println(dist);
     return;
   }
 
   char createLocation[200]{};
-  sprintf(createLocation, "{\"query\":\"mutation CreateLocation{createLocation(lat:%.5f, lng: %.5f, hdop: %.2f, speed: %.2f, course: %.2f, age: %lu){ id }}\",\"variables\":{}}", gps.location.lat(), gps.location.lng(), gps.hdop.hdop(), gps.speed.kmph(), gps.course.deg(), gps.location.age());
+  sprintf(createLocation, "{\"query\":\"mutation CreateLocation{createLocation(lat:%.5f, lng: %.5f, hdop: %.2f, speed: %.2f, course: %.2f, age: 0){ id }}\",\"variables\":{}}", reading.lat, reading.lng, reading.hdop, reading.kmph, reading.deg);
   DynamicJsonDocument doc = network.SendRequest(createLocation, &BLE);
   if(doc["data"] && doc["data"]["createLocation"]) {
     const uint8_t id = (const uint8_t)(doc["data"]["createLocation"]["id"]);
     Serial.print("created location id is: ");
     Serial.println(id);
-    lastSentLat = gps.location.lat();
-    lastSentLng = gps.location.lng();
+    location.lastSentReading = reading;
   } else {
     Serial.println("error parsing doc");
   }
@@ -662,7 +635,9 @@ void loop() {
   }
 
   // Update GPS
-  // UpdateGPS();
+  if(!peripheral && pairingStartTime == 0) {
+    UpdateGPS();
+  }
 
   // debugging is a bit crazy 
   if(Serial.availableForWrite()) {
