@@ -54,7 +54,7 @@ namespace Utilities {
     #endif  // __arm__
     }
 
-    void BLEDelay(uint16_t milliseconds, BLELocalDevice* BLE) {
+    void bleDelay(uint16_t milliseconds, BLELocalDevice* BLE) {
         unsigned long endTime = millis() + milliseconds;
         while(millis() < endTime) {
             BLE->poll();

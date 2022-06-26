@@ -113,7 +113,7 @@ void onBLEConnected(BLEDevice d) {
         writtenVal.toCharArray(rawCommand, 30);
       }
       Serial.print(".");
-      Utilities::BLEDelay(10, &BLE);
+      Utilities::bleDelay(10, &BLE);
     }
     if(!phone) return;
     Serial.print("\nUserID value: ");
@@ -418,7 +418,7 @@ void ConnectToFoundSensor() {
   if(!peripheral->connect()) {
     Utilities::analogWriteRGB(255, 0, 0);
     Serial.println("\nFailed to connect retrying....");
-    Utilities::BLEDelay(1000, &BLE);
+    Utilities::bleDelay(1000, &BLE);
     return;
   }
 
@@ -567,7 +567,7 @@ void FirmwareUpdate() {
   BLE.poll();
   Serial.println("Stalling...");
 
-  Utilities::BLEDelay(2000, &BLE);
+  Utilities::bleDelay(2000, &BLE);
 
   Serial.println("Sketch update apply and reset.");
   Serial.flush();

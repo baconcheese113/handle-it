@@ -26,5 +26,5 @@ namespace Utilities {
     /**
      * Delays for milliseconds while continuously polling
      */
-    void BLEDelay(uint16_t milliseconds, BLELocalDevice* BLE);
+    void bleDelay(uint16_t milliseconds, BLELocalDevice* BLE);
 }
