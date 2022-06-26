@@ -1,3 +1,6 @@
+#ifndef UTILITIES_H
+#define UTILITIES_H
+
 #include <Arduino.h>
 #include <ArduinoBLE.h>
 
@@ -28,3 +31,5 @@ namespace Utilities {
      */
     void bleDelay(uint16_t milliseconds, BLELocalDevice* BLE);
 }
+
+#endif
