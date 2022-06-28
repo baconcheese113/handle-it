@@ -131,7 +131,7 @@ void onBLEConnected(BLEDevice d) {
     char getHubQueryStr[] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
     DynamicJsonDocument hubViewerDoc = network.SendRequest(getHubQueryStr, &BLE);
     if(hubViewerDoc["data"] && hubViewerDoc["data"]["hubViewer"]) {
-      const uint8_t id = (const uint8_t)(hubViewerDoc["data"]["hubViewer"]["id"]);
+      const uint16_t id = (const uint16_t)(hubViewerDoc["data"]["hubViewer"]["id"]);
       Serial.print("getHubViewer id: ");
       Serial.println(id);
       String hubCommand = "HubId:";
@@ -434,7 +434,7 @@ void ConnectToFoundSensor() {
   sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, isOpen: true, isConnected: true, serial:\\\"%s\\\"){id}}\",\"variables\":{}}", sensorSerial);
   DynamicJsonDocument doc = network.SendRequest(mutationStr, &BLE);
   if(doc["data"] && doc["data"]["createSensor"]) {
-    const uint8_t id = (const uint8_t)(doc["data"]["createSensor"]["id"]);
+    const uint16_t id = (const uint16_t)(doc["data"]["createSensor"]["id"]);
     Serial.print("createSensor id: ");
     Serial.println(id);
     Serial.print("Adding to knownSensorAddrs: ");
@@ -482,7 +482,7 @@ void MonitorSensor() {
     sprintf(createEvent, "{\"query\":\"mutation CreateEvent{createEvent(serial:\\\"%s\\\"){ id }}\",\"variables\":{}}\n", address);
     DynamicJsonDocument doc = network.SendRequest(createEvent, &BLE);
     if(doc["data"] && doc["data"]["createEvent"]) {
-      const uint8_t id = (const uint8_t)(doc["data"]["createEvent"]["id"]);
+      const uint16_t id = (const uint16_t)(doc["data"]["createEvent"]["id"]);
       Serial.print("created event id is: ");
       Serial.println(id);
       lastReadVoltage = voltage;
@@ -598,7 +598,7 @@ void UpdateGPS() {
   sprintf(createLocation, "{\"query\":\"mutation CreateLocation{createLocation(lat:%.5f, lng: %.5f, hdop: %.2f, speed: %.2f, course: %.2f, age: 0){ id }}\",\"variables\":{}}", reading.lat, reading.lng, reading.hdop, reading.kmph, reading.deg);
   DynamicJsonDocument doc = network.SendRequest(createLocation, &BLE);
   if(doc["data"] && doc["data"]["createLocation"]) {
-    const uint8_t id = (const uint8_t)(doc["data"]["createLocation"]["id"]);
+    const uint16_t id = (const uint16_t)(doc["data"]["createLocation"]["id"]);
     Serial.print("created location id is: ");
     Serial.println(id);
     location.lastSentReading = reading;
