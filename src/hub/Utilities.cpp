@@ -75,6 +75,7 @@ namespace Utilities {
                 if(!didReadHead) {
                     if(c != head[idx]) {
                         Serial.println("Head doesn't match");
+                        while(Serial1.available()) Serial1.read();
                         return false;
                     }
                     if(idx == strlen(head) - 1) didReadHead = true;
