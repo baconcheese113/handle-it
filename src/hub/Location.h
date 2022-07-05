@@ -1,5 +1,5 @@
-#ifndef LOCATION_H
-#define LOCATION_H
+#ifndef HUB_LOCATION_H
+#define HUB_LOCATION_H
 
 struct LocReading {
   bool hasFix = false;

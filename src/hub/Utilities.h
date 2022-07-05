@@ -1,5 +1,5 @@
-#ifndef UTILITIES_H
-#define UTILITIES_H
+#ifndef HUB_UTILITIES_H
+#define HUB_UTILITIES_H
 
 #include <Arduino.h>
 #include <ArduinoBLE.h>

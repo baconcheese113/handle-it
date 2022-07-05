@@ -1,5 +1,5 @@
-#ifndef NETWORK_H
-#define NETWORK_H
+#ifndef HUB_NETWORK_H
+#define HUB_NETWORK_H
 
 #include <ArduinoBLE.h>
 #include <ArduinoJson.h>

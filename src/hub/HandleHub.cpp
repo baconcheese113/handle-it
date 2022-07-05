@@ -8,7 +8,7 @@
 // Digital pins
 #define PAIR_PIN  10
 // Analog pins
-#define BATT_PIN  0
+#define BATT_PIN A0
 
 const int VERSION = 1;
 
