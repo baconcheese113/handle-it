@@ -76,73 +76,76 @@ void onBLEConnected(BLEDevice d) {
   Serial.println(d.address());
   
   bool dNameMatch = d.deviceName().compareTo(PERIPHERAL_NAME) == 0 || d.localName().compareTo(PERIPHERAL_NAME) == 0;
-  bool peripheralNameMatch = peripheral->deviceName().compareTo(PERIPHERAL_NAME) == 0 || peripheral->localName().compareTo(PERIPHERAL_NAME) == 0;
-  if(!dNameMatch && !peripheralNameMatch) {
-    phone = new BLEDevice();
-    *phone = d;
-    setPairMode(false);
-    digitalWrite(LED_BUILTIN, HIGH);
-    if(strlen(network.accessToken) > 0) {
-      Serial.println("Already have accessToken");
-      return;
+  setPairMode(false);
+  if(dNameMatch) {
+    // if we just connectd to a peripheral then there's nothing else to do
+    return;
+  }
+  phone = new BLEDevice();
+  *phone = d;
+  digitalWrite(LED_BUILTIN, HIGH);
+  if(network.tokenData.isValid) {
+    Serial.println("Already have accessToken");
+    return;
+  }
+  // Grab access_token from userId of connected phone
+  char rawCommand[30]{};
+  Serial.print("Trying to read userid...");
+  while(strlen(rawCommand) < 1 && phone) {
+    // Required to allow the phone to finish connecting properly
+    BLE.poll();
+    if(commandChar.written()) {
+      String writtenVal = commandChar.value();
+      writtenVal.toCharArray(rawCommand, 30);
     }
-    // Grab access_token from userId of connected phone
-    char rawCommand[30]{};
-    Serial.print("Trying to read userid...");
-    while(strlen(rawCommand) < 1 && phone) {
-      // Required to allow the phone to finish connecting properly
-      BLE.poll();
-      if(commandChar.written()) {
-        String writtenVal = commandChar.value();
-        writtenVal.toCharArray(rawCommand, 30);
-      }
-      Serial.print(".");
-      Utilities::bleDelay(10, &BLE);
-    }
-    if(!phone) return;
-    Serial.print("\nUserID value: ");
-    Serial.println(rawCommand);
+    Serial.print(".");
+    Utilities::bleDelay(10, &BLE);
+  }
+  if(!phone) return;
+  Serial.print("\nUserID value: ");
+  Serial.println(rawCommand);
 
-    Command command = Utilities::parseRawCommand(rawCommand);
-    if(strcmp(command.type, "UserId") != 0) {
-      Serial.print("Error: command.type is not equal to UserId, command.type: ");
-      Serial.println(command.type);
-      return;
-    } else {
-      Serial.println("command.type is UserId");
-    }
-    char loginMutationStr[100 + strlen(command.value) + strlen(deviceImei)]{};
-    sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\")}\",\"variables\":{}}", command.value, deviceImei);
-    DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr, &BLE);
-    if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
-      const char* token = (const char *)(loginDoc["data"]["loginAsHub"]);
-      network.SetAccessToken(token);
-      Serial.print("token is: ");
-      Serial.println(token);
-      Serial.print("network.accessToken is: ");
-      Serial.println(network.accessToken);
-      // TODO check if token is different from existing token in flash storage, if so replace it
-      // cmaglie/FlashStorage
-    } else {
-      Serial.println("Error reading token");
-      return;
-    }
+  Command command = Utilities::parseRawCommand(rawCommand);
+  if(strcmp(command.type, "UserId") != 0) {
+    Serial.print("Error: command.type is not equal to UserId, command.type: ");
+    Serial.println(command.type);
+    return;
+  } else {
+    Serial.println("command.type is UserId");
+  }
+  char loginMutationStr[100 + strlen(command.value) + strlen(deviceImei)]{};
+  sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\")}\",\"variables\":{}}", command.value, deviceImei);
+  DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr, &BLE);
+  if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
+    const char* token = (const char *)(loginDoc["data"]["loginAsHub"]);
+    network.SetAccessToken(token);
+    Serial.print("token is: ");
+    Serial.println(token);
+    Serial.print("network.accessToken is: ");
+    Serial.println(network.tokenData.accessToken);
+    Serial.print("And strlen: ");
+    Serial.println(strlen(network.tokenData.accessToken));
+    // TODO check if token is different from existing token in flash storage, if so replace it
+    // cmaglie/FlashStorage
+  } else {
+    Serial.println("Error reading token");
+    return;
+  }
 
-    char getHubQueryStr[] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
-    DynamicJsonDocument hubViewerDoc = network.SendRequest(getHubQueryStr, &BLE);
-    if(hubViewerDoc["data"] && hubViewerDoc["data"]["hubViewer"]) {
-      const uint16_t id = (const uint16_t)(hubViewerDoc["data"]["hubViewer"]["id"]);
-      Serial.print("getHubViewer id: ");
-      Serial.println(id);
-      String hubCommand = "HubId:";
-      hubCommand.concat(id);
-      Serial.print("Wrote HubId command back to phone: ");
-      Serial.println(hubCommand);
-      commandChar.writeValue(hubCommand);
-    } else {
-      Serial.println("Error getting hubId");
-      return;
-    }
+  char getHubQueryStr[] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
+  DynamicJsonDocument hubViewerDoc = network.SendRequest(getHubQueryStr, &BLE);
+  if(hubViewerDoc["data"] && hubViewerDoc["data"]["hubViewer"]) {
+    const uint16_t id = (const uint16_t)(hubViewerDoc["data"]["hubViewer"]["id"]);
+    Serial.print("getHubViewer id: ");
+    Serial.println(id);
+    String hubCommand = "HubId:";
+    hubCommand.concat(id);
+    Serial.print("Wrote HubId command back to phone: ");
+    Serial.println(hubCommand);
+    commandChar.writeValue(hubCommand);
+  } else {
+    Serial.println("Error getting hubId");
+    return;
   }
 }
 
@@ -163,11 +166,13 @@ void onBLEDisconnected(BLEDevice d) {
   }
   delete peripheral;
   peripheral = nullptr;
+  commandChar.writeValue("");
 }
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(PAIR_PIN, INPUT);
+  pinMode(BATT_PIN, INPUT);
 
   Utilities::analogWriteRGB(0, 0, 0);
   Serial.begin(115200);
@@ -218,7 +223,7 @@ void setup() {
 
   network.InitializeAccessToken();
 
-  if(strlen(network.accessToken)) {
+  if(network.tokenData.isValid) {
     char sensorQuery[] = "{\"query\":\"query getMySensors{hubViewer{sensors{serial}}}\",\"variables\":{}}";
     DynamicJsonDocument doc = network.SendRequest(sensorQuery, &BLE);
     if(doc["data"] && doc["data"]["hubViewer"] && doc["data"]["hubViewer"]["sensors"]) {
@@ -234,7 +239,7 @@ void setup() {
       }
     } else {
       Serial.print("Get sensors failed, but accessToken strlen is: ");
-      Serial.println(strlen(network.accessToken));
+      Serial.println(strlen(network.tokenData.accessToken));
     }
   }
 }
@@ -246,6 +251,7 @@ void CheckInput() {
     pairButtonHoldStartTime = 0;
     return;
   }
+  if(isAdvertising) return;
   
   if(pairButtonHoldStartTime == 0) {
     pairButtonHoldStartTime = millis();
@@ -253,6 +259,7 @@ void CheckInput() {
   else if(millis() > pairButtonHoldStartTime + 5000) {
     // enter pair mode
     pairingStartTime = millis();
+    setPairMode(true);
   }
 }
 
@@ -266,7 +273,6 @@ void PairToPhone() {
   if(millis() / 1000 % 2) Utilities::analogWriteRGB(75, 0, 130);
   else Utilities::analogWriteRGB(75, 0, 80);
 
-  setPairMode(true);
   // Must be called while pairing so characteristics are available
   BLE.poll();
 }
@@ -566,7 +572,7 @@ void FirmwareUpdate() {
 }
 
 void UpdateGPS() {
-  if(!strlen(network.accessToken)) return;
+  if(!network.tokenData.isValid) return;
   if(millis() < location.lastGPSTime + 60000) return;
   location.lastGPSTime = millis();
   Serial1.println("AT+CGNSINF");

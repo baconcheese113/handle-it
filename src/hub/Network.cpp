@@ -3,27 +3,28 @@
 #include <./conf.cpp>
 #include <./hub/Network.h>
 
-// TODO store token in EEPROM
-FlashStorage(flashAccessToken, const char*);
+FlashStorage(flashTokenData, TokenData);
 
 uint8_t AT_HTTPDATA_IDX = 7;
 uint8_t AT_HTTPACTION_IDX = 8;
 uint8_t AT_HTTPREAD_IDX = 9;
 
 void Network::InitializeAccessToken() {
-    const char* foundToken = flashAccessToken.read();
-    if(strlen(foundToken) > 20) {
-        Serial.print("Found existing token length: ");
-        Serial.println(strlen(foundToken));
-        strcpy(accessToken, foundToken);
+    tokenData = flashTokenData.read();
+    if(tokenData.isValid) {
+        Serial.print("Found existing token: "); 
+        Serial.println(tokenData.accessToken);
+        Serial.print("Token length: ");
+        Serial.println(strlen(tokenData.accessToken));
     } else {
         Serial.println("No existing token found");
     }
 }
 
 void Network::SetAccessToken(const char newAccessToken[100]) {
-    flashAccessToken.write(newAccessToken);
-    strcpy(accessToken, newAccessToken);
+    strcpy(tokenData.accessToken, newAccessToken);
+    tokenData.isValid = true;
+    flashTokenData.write(tokenData);
 }
 
 DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
@@ -31,9 +32,9 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
     Serial.println("Sending request");
     Serial.println(query);
 
-    char authCommand[55 + strlen(accessToken)]{};
-    if(strlen(accessToken) > 0) {
-        sprintf(authCommand, "AT+HTTPPARA=\"USERDATA\",\"Authorization:Bearer %s\"", accessToken);
+    char authCommand[55 + strlen(tokenData.accessToken)]{};
+    if(tokenData.isValid) {
+        sprintf(authCommand, "AT+HTTPPARA=\"USERDATA\",\"Authorization:Bearer %s\"", tokenData.accessToken);
     } else {
         strcpy(authCommand, "AT+HTTPPARA=\"USERDATA\",\"\"");
     }
@@ -136,8 +137,9 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
     substr[9] = '\0';
     if (strcmp(substr, "{\"errors\"") == 0) {
         Serial.println("Graph Failure: Clearing accessToken");
-        memset(accessToken, 0, 100);
-        flashAccessToken.write("");
+        memset(tokenData.accessToken, 0, 100);
+        tokenData.isValid = false;
+        flashTokenData.write(tokenData);
         Serial.println("accessToken cleared");
     }
     return doc;

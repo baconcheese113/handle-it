@@ -7,6 +7,11 @@
 // Needs to be large enough for error messages
 const uint16_t RESPONSE_SIZE = 2000;
 
+typedef struct {
+    char accessToken[100]{};
+    boolean isValid = false;
+} TokenData;
+
 class Network {
     private:
         /**
@@ -16,9 +21,9 @@ class Network {
 
     public:
         /**
-         * Mutatable token to access API_URL as Hub, set once registration is successful
+         * Struct with mutatable token to access API_URL as Hub, set once registration is successful
         **/
-        char accessToken[100]{};
+        TokenData tokenData = {};
 
         void InitializeAccessToken();
 
