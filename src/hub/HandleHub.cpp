@@ -64,7 +64,7 @@ void setPairMode(bool turnOn) {
   if(turnOn && !isAdvertising) {
     BLE.advertise();
     isAdvertising = true;
-  } else if(!turnOn && isAdvertising) {
+  } else if(!turnOn) {
     pairingStartTime = 0;
     BLE.stopAdvertise();
     isAdvertising = false;
@@ -143,6 +143,8 @@ void onBLEConnected(BLEDevice d) {
     Serial.print("Wrote HubId command back to phone: ");
     Serial.println(hubCommand);
     commandChar.writeValue(hubCommand);
+    Utilities::bleDelay(5000, &BLE);
+    setPairMode(false);
   } else {
     Serial.println("Error getting hubId");
     return;
