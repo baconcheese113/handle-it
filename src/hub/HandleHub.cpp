@@ -258,7 +258,7 @@ void CheckInput() {
   if(pairButtonHoldStartTime == 0) {
     pairButtonHoldStartTime = millis();
   } 
-  else if(millis() > pairButtonHoldStartTime + 5000) {
+  else if(millis() > pairButtonHoldStartTime + 3000) {
     // enter pair mode
     pairingStartTime = millis();
     setPairMode(true);
@@ -449,6 +449,7 @@ void ConnectToFoundSensor() {
     Serial.println(peripheral->address());
     knownSensorAddrs[knownSensorAddrsLen] = peripheral->address();
     knownSensorAddrsLen++;
+    Utilities::bleDelay(5000, &BLE);
     if(phone) {
       commandChar.writeValue("SensorAdded:1");
     }
@@ -469,7 +470,7 @@ void MonitorSensor() {
   bool hasVolts = forceService.hasCharacteristic(VOLT_CHARACTERISTIC_UUID);
   Serial.print("Has volts: ");
   Serial.println(hasVolts);
-  if(!hasVolts) return;
+  // if(!hasVolts) return;
   BLECharacteristic volts = forceService.characteristic(VOLT_CHARACTERISTIC_UUID);
   Serial.print("Characteristic value length: ");
   Serial.println(volts.valueLength());
@@ -480,11 +481,11 @@ void MonitorSensor() {
   Serial.print("Can subscribe: ");
   Serial.println(volts.canSubscribe());
 
-  if(volts.canRead()) {
-    int32_t voltage = 0;
-    volts.readValue(voltage);
-    Serial.print("Volts value: ");
-    Serial.println(voltage);
+  // if(volts.canRead()) {
+    // int32_t voltage = 0;
+    // volts.readValue(voltage);
+    // Serial.print("Volts value: ");
+    // Serial.println(voltage);
     const char* address = peripheral->address().c_str();
     char createEvent[100 + strlen(address)]{};
     sprintf(createEvent, "{\"query\":\"mutation CreateEvent{createEvent(serial:\\\"%s\\\"){ id }}\",\"variables\":{}}\n", address);
@@ -493,7 +494,7 @@ void MonitorSensor() {
       const uint16_t id = (const uint16_t)(doc["data"]["createEvent"]["id"]);
       Serial.print("created event id is: ");
       Serial.println(id);
-      lastReadVoltage = voltage;
+      // lastReadVoltage = voltage;
     } else {
       Serial.println("error parsing doc");
     }
@@ -501,9 +502,10 @@ void MonitorSensor() {
     Serial.print("Cooling down to prevent peripheral reconnection---");
     setPairMode(true);
     lastEventTime = millis();
-  } else {
-    Serial.println("Unable to read volts");
-  }
+  // } 
+  // else {
+  //   Serial.println("Unable to read volts");
+  // }
 }
 
 void FirmwareUpdate() {
