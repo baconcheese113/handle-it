@@ -72,7 +72,7 @@ void setPairMode(bool turnOn) {
 }
 
 void onBLEConnected(BLEDevice d) {
-  Serial.print(">>> BLEConnected to: ");
+  Serial.print("\n>>> BLEConnected to: ");
   Serial.println(d.address());
   
   bool dNameMatch = d.deviceName().compareTo(PERIPHERAL_NAME) == 0 || d.localName().compareTo(PERIPHERAL_NAME) == 0;
@@ -165,10 +165,10 @@ void onBLEDisconnected(BLEDevice d) {
     isAddingNewSensor = false;
     memset(currentCommand.type, 0, sizeof currentCommand.type);
     memset(currentCommand.value, 0, sizeof currentCommand.value);
+    commandChar.writeValue("");
   }
   delete peripheral;
   peripheral = nullptr;
-  commandChar.writeValue("");
 }
 
 void setup() {
@@ -425,7 +425,8 @@ void ConnectToFoundSensor() {
   Utilities::analogWriteRGB(255, 100, 200);
   Serial.println("\nPeripheral connected!");
   Serial.println(peripheral->discoverService(SENSOR_SERVICE_UUID));
-  Serial.println(peripheral->discoverAttributes());
+  // FIXME discoverAttributes should work quickly
+  // Serial.println(peripheral->discoverAttributes());
   Serial.print("Service count: ");
   Serial.println(peripheral->serviceCount());
   Serial.print("Appearance: ");
@@ -449,11 +450,11 @@ void ConnectToFoundSensor() {
     Serial.println(peripheral->address());
     knownSensorAddrs[knownSensorAddrsLen] = peripheral->address();
     knownSensorAddrsLen++;
-    Utilities::bleDelay(5000, &BLE);
+    if(peripheral) peripheral->disconnect();
     if(phone) {
       commandChar.writeValue("SensorAdded:1");
+      Utilities::bleDelay(2000, &BLE);
     }
-    peripheral->disconnect();
     Serial.print("Cooling down to prevent peripheral reconnection---");
     setPairMode(true);
     lastEventTime = millis();
