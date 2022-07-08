@@ -32,6 +32,11 @@ namespace Utilities {
     void bleDelay(uint16_t milliseconds, BLELocalDevice* BLE);
 
     /**
+     * Workaround for LowPower.idle() not working correctly
+     */
+    void idle(unsigned long delay);
+
+    /**
      * Reads n bytes into buffer (ignoring head) from Serial1
      * Returns true if OK received, false otherwise
     **/

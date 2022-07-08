@@ -1,6 +1,7 @@
 #include <ArduinoBLE.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
+#include <ArduinoLowPower.h>
 #include <./hub/Utilities.h>
 #include <./hub/Network.h>
 #include <./hub/Location.h>
@@ -99,7 +100,7 @@ void onBLEConnected(BLEDevice d) {
       writtenVal.toCharArray(rawCommand, 30);
     }
     Serial.print(".");
-    Utilities::bleDelay(10, &BLE);
+    Utilities::bleDelay(50, &BLE);
   }
   if(!phone) return;
   Serial.print("\nUserID value: ");
@@ -650,8 +651,5 @@ void loop() {
     UpdateGPS();
   }
 
-  // debugging is a bit crazy 
-  if(Serial.availableForWrite()) {
-    delay(200);
-  }
+  Utilities::idle(200);
 }

@@ -1,4 +1,5 @@
-#include<Arduino.h>
+#include <Arduino.h>
+#include <ArduinoLowPower.h>
 #include <./hub/Utilities.h>
 #define RGB_R  9
 #define RGB_G  6
@@ -58,7 +59,14 @@ namespace Utilities {
         unsigned long endTime = millis() + milliseconds;
         while(millis() < endTime) {
             BLE->poll();
-            delay(1);
+            idle(50);
+        }
+    }
+
+    void idle(unsigned long delay) {
+        unsigned long endTime = millis() + delay;
+        while (millis() < endTime) {
+            LowPower.idle(delay);
         }
     }
 
