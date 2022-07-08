@@ -28,7 +28,9 @@ void Network::SetAccessToken(const char newAccessToken[100]) {
 }
 
 DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
+    setFunMode(true);
     Utilities::analogWriteRGB(0, 0, 60);
+    Utilities::bleDelay(1000, BLE);
     Serial.println("Sending request");
     Serial.println(query);
 
@@ -142,7 +144,36 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
         flashTokenData.write(tokenData);
         Serial.println("accessToken cleared");
     }
+    setFunMode(false);
     return doc;
+}
+
+void Network::setFunMode(bool fullFunctionality) {
+    memset(buffer, 0, RESPONSE_SIZE);
+    uint8_t size = 0;
+    Serial1.print("AT+CFUN=");
+    Serial1.println(fullFunctionality ? "1" : "4");
+    Serial1.flush();
+    unsigned long timeout = millis() + 2000;
+    while(timeout > millis()) {
+        if(Serial1.available()) {
+            buffer[size] = Serial1.read();
+            size++;
+        }
+        if(fullFunctionality && size > 12
+                && buffer[size - 1] == 10
+                && buffer[size - 2] == 13
+                && buffer[size - 7] == 'R' && buffer[size - 6] == 'e' && buffer[size - 5] == 'a' && buffer[size - 4] == 'd' && buffer[size - 3] == 'y') // SMS Ready
+        {
+            return;
+        } else if (!fullFunctionality && size >= 6
+                && buffer[size - 1] == 10
+                && buffer[size - 2] == 13
+                && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K')
+        {
+            return;
+        }
+    }
 }
 
 void Network::GetImei(char* imeiBuffer) {

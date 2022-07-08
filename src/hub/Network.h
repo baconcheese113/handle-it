@@ -36,6 +36,11 @@ class Network {
         DynamicJsonDocument SendRequest(char* query, BLELocalDevice* BLE);
 
         /**
+         * Utility function to set AT+CFUN=1 or 4 (1 = full, 4 = airplane mode)
+         */
+        void setFunMode(bool fullFunctionality);
+
+        /**
          * Gets IMEI string from the SIM module and stores it into provided buffer
         **/
         void GetImei(char* imeiBuffer);

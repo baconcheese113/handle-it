@@ -190,6 +190,7 @@ void setup() {
     Serial.print("Device IMEI: ");
     Serial.println(deviceImei);
   }
+  network.setFunMode(false);
   location.setGPSPower(false);
 
    // begin BLE initialization
