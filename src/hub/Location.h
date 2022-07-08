@@ -10,6 +10,12 @@ struct LocReading {
   double hdop = 0;
 };
 
+// Interval is the amount of time between checks
+const unsigned long GPS_UPDATE_INTERVAL = 180000;
+// When a check is ready to occur, the module is 
+// powered on for this amount of time before reading
+const unsigned long GPS_BUFFER_TIME = 10000;
+
 class Location
 {
 
@@ -24,6 +30,9 @@ public:
   // // The last longitude sent to the server
   // double lastSentLng = 0;
   LocReading lastSentReading;
+
+  // If the GPS module is powered on (should be off on init)
+  bool isPowered = false;
 
   static void printLocReading(LocReading reading);
 
@@ -45,6 +54,13 @@ public:
    * and return a LocReading struct
    */
   static LocReading parseInf(char* infBuffer);
+
+  /**
+   * Powers on/off GPS module
+   */
+  void setGPSPower(bool turnOn);
+
+
 
 };
 

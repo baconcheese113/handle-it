@@ -190,12 +190,7 @@ void setup() {
     Serial.print("Device IMEI: ");
     Serial.println(deviceImei);
   }
-  Serial1.println("AT+CGNSPWR=1");
-  Serial1.flush();
-  delay(3);
-  while(Serial1.available()) {
-    Serial.write(Serial1.read());
-  }
+  location.setGPSPower(false);
 
    // begin BLE initialization
   if (!BLE.begin()) {
@@ -579,7 +574,11 @@ void FirmwareUpdate() {
 
 void UpdateGPS() {
   if(!network.tokenData.isValid) return;
-  if(millis() < location.lastGPSTime + 60000) return;
+  if(millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL) return;
+  if(millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL + GPS_BUFFER_TIME) {
+    if(!location.isPowered) location.setGPSPower(true);
+    return;
+  }
   location.lastGPSTime = millis();
   Serial1.println("AT+CGNSINF");
   Serial1.flush();
@@ -587,7 +586,10 @@ void UpdateGPS() {
   char infBuffer[200]{};
   memset(infBuffer, 0, 200);
   bool didRead = Utilities::readUntilResp("AT+CGNSINF\r\r\n+CGNSINF: ", infBuffer);
-  if(!didRead) return;
+  if(!didRead) {
+    location.setGPSPower(false);
+    return;
+  } 
 
   Serial.print("\nBuffer: ");
   Serial.println(infBuffer);
@@ -595,6 +597,7 @@ void UpdateGPS() {
   Serial.println("\n\r*****Updating GPS location*****");
   if(!reading.hasFix) {
     Serial.println("No GPS fix yet, aborting");
+    location.setGPSPower(false);
     return;
   }
   location.printLocReading(reading);
@@ -603,6 +606,7 @@ void UpdateGPS() {
   if(dist < 20) {
     Serial.print("New location is less than 20m away from previously sent location, aborting.\nDistance(m): ");
     Serial.println(dist);
+    location.setGPSPower(false);
     return;
   }
 
@@ -617,6 +621,7 @@ void UpdateGPS() {
   } else {
     Serial.println("error parsing doc");
   }
+  location.setGPSPower(false);
 }
 
 void loop() {

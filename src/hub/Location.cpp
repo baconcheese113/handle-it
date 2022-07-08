@@ -66,3 +66,16 @@ LocReading Location::parseInf(char* infBuffer) {
   }
   return reading;
 }
+
+void Location::setGPSPower(bool turnOn) {
+  isPowered = turnOn;
+  if(turnOn) Serial.println("\nGPS check scheduled, warming up GPS module");
+  else Serial.println("\nGPS module powering off");
+  Serial1.print("AT+CGNSPWR=");
+  Serial1.println(turnOn ? "1" : "0");
+  Serial1.flush();
+  delay(3);
+  while(Serial1.available()) {
+    Serial.write(Serial1.read());
+  }
+}
