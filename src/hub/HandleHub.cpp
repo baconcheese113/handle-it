@@ -62,10 +62,10 @@ uint8_t knownSensorAddrsLen = 0;
 int32_t lastReadVoltage = 0;
 
 void setPairMode(bool turnOn) {
-  if(turnOn && !isAdvertising) {
+  if (turnOn && !isAdvertising) {
     BLE.advertise();
     isAdvertising = true;
-  } else if(!turnOn) {
+  } else if (!turnOn) {
     pairingStartTime = 0;
     BLE.stopAdvertise();
     isAdvertising = false;
@@ -75,39 +75,39 @@ void setPairMode(bool turnOn) {
 void onBLEConnected(BLEDevice d) {
   Serial.print("\n>>> BLEConnected to: ");
   Serial.println(d.address());
-  
+
   bool dNameMatch = d.deviceName().compareTo(PERIPHERAL_NAME) == 0 || d.localName().compareTo(PERIPHERAL_NAME) == 0;
   setPairMode(false);
-  if(dNameMatch) {
+  if (dNameMatch) {
     // if we just connectd to a peripheral then there's nothing else to do
     return;
   }
   phone = new BLEDevice();
   *phone = d;
   digitalWrite(LED_BUILTIN, HIGH);
-  if(network.tokenData.isValid) {
+  if (network.tokenData.isValid) {
     Serial.println("Already have accessToken");
     return;
   }
   // Grab access_token from userId of connected phone
   char rawCommand[30]{};
   Serial.print("Trying to read userid...");
-  while(strlen(rawCommand) < 1 && phone) {
+  while (strlen(rawCommand) < 1 && phone) {
     // Required to allow the phone to finish connecting properly
     BLE.poll();
-    if(commandChar.written()) {
+    if (commandChar.written()) {
       String writtenVal = commandChar.value();
       writtenVal.toCharArray(rawCommand, 30);
     }
     Serial.print(".");
     Utilities::bleDelay(50, &BLE);
   }
-  if(!phone) return;
+  if (!phone) return;
   Serial.print("\nUserID value: ");
   Serial.println(rawCommand);
 
   Command command = Utilities::parseRawCommand(rawCommand);
-  if(strcmp(command.type, "UserId") != 0) {
+  if (strcmp(command.type, "UserId") != 0) {
     Serial.print("Error: command.type is not equal to UserId, command.type: ");
     Serial.println(command.type);
     return;
@@ -117,8 +117,8 @@ void onBLEConnected(BLEDevice d) {
   char loginMutationStr[100 + strlen(command.value) + strlen(deviceImei)]{};
   sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\", imei:\\\"%s\\\")}\",\"variables\":{}}", command.value, BLE.address().c_str(), deviceImei);
   DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr, &BLE);
-  if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
-    const char* token = (const char *)(loginDoc["data"]["loginAsHub"]);
+  if (loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
+    const char* token = (const char*)(loginDoc["data"]["loginAsHub"]);
     network.SetAccessToken(token);
     Serial.print("token is: ");
     Serial.println(token);
@@ -135,7 +135,7 @@ void onBLEConnected(BLEDevice d) {
 
   char getHubQueryStr[] = "{\"query\":\"query getHubViewer{hubViewer{id}}\",\"variables\":{}}";
   DynamicJsonDocument hubViewerDoc = network.SendRequest(getHubQueryStr, &BLE);
-  if(hubViewerDoc["data"] && hubViewerDoc["data"]["hubViewer"]) {
+  if (hubViewerDoc["data"] && hubViewerDoc["data"]["hubViewer"]) {
     const uint16_t id = (const uint16_t)(hubViewerDoc["data"]["hubViewer"]["id"]);
     Serial.print("getHubViewer id: ");
     Serial.println(id);
@@ -156,10 +156,10 @@ void onBLEDisconnected(BLEDevice d) {
   Serial.print("\n>>> BLEDisconnecting from: ");
   Serial.println(d.address());
   digitalWrite(LED_BUILTIN, LOW);
-  if(peripheral && peripheral->address() == d.address()) {
+  if (peripheral && peripheral->address() == d.address()) {
     Serial.println("Peripheral disconnected");
     Utilities::analogWriteRGB(0, 0, 0);
-  } else if(phone && phone->address() == d.address()) {
+  } else if (phone && phone->address() == d.address()) {
     Serial.println("Phone disconnected");
     delete phone;
     phone = nullptr;
@@ -179,13 +179,13 @@ void setup() {
 
   Utilities::analogWriteRGB(0, 0, 0);
   Serial.begin(115200);
-  while(!Serial);
+  while (!Serial);
   Serial.println("Booting...");
   Serial1.begin(115200);
-  while(!Serial1);
+  while (!Serial1);
   Serial.println("Serial1 started at 115200 baud");
-  while(Serial1.available()) Serial1.read();
-  while(strlen(deviceImei) < 1) {
+  while (Serial1.available()) Serial1.read();
+  while (strlen(deviceImei) < 1) {
     network.GetImei(deviceImei);
     Serial.print("Device IMEI: ");
     Serial.println(deviceImei);
@@ -193,7 +193,7 @@ void setup() {
   network.setFunMode(false);
   location.setGPSPower(false);
 
-   // begin BLE initialization
+  // begin BLE initialization
   if (!BLE.begin()) {
     Serial.println("starting BLE failed!");
 
@@ -224,13 +224,13 @@ void setup() {
 
   network.InitializeAccessToken();
 
-  if(network.tokenData.isValid) {
+  if (network.tokenData.isValid) {
     char sensorQuery[] = "{\"query\":\"query getMySensors{hubViewer{sensors{serial}}}\",\"variables\":{}}";
     DynamicJsonDocument doc = network.SendRequest(sensorQuery, &BLE);
-    if(doc["data"] && doc["data"]["hubViewer"] && doc["data"]["hubViewer"]["sensors"]) {
+    if (doc["data"] && doc["data"]["hubViewer"] && doc["data"]["hubViewer"]["sensors"]) {
       const JsonArrayConst sensors = doc["data"]["hubViewer"]["sensors"];
-      if(sensors.size()) {
-        for(uint8_t i = 0; i < sensors.size(); i++) {
+      if (sensors.size()) {
+        for (uint8_t i = 0; i < sensors.size(); i++) {
           knownSensorAddrs[i] = String((const char*)sensors[i]["serial"]);
           knownSensorAddrsLen++;
           Serial.print(knownSensorAddrs[i]);
@@ -246,18 +246,17 @@ void setup() {
 }
 
 void CheckInput() {
-  
+
   bool pressingPairButton = digitalRead(PAIR_PIN) == HIGH;
-  if(!pressingPairButton) {
+  if (!pressingPairButton) {
     pairButtonHoldStartTime = 0;
     return;
   }
-  if(isAdvertising) return;
-  
-  if(pairButtonHoldStartTime == 0) {
+  if (isAdvertising) return;
+
+  if (pairButtonHoldStartTime == 0) {
     pairButtonHoldStartTime = millis();
-  } 
-  else if(millis() > pairButtonHoldStartTime + 3000) {
+  } else if (millis() > pairButtonHoldStartTime + 3000) {
     // enter pair mode
     pairingStartTime = millis();
     setPairMode(true);
@@ -265,13 +264,13 @@ void CheckInput() {
 }
 
 void PairToPhone() {
-  if(millis() > pairingStartTime + 60000) {
+  if (millis() > pairingStartTime + 60000) {
     // pairing timed out
     setPairMode(false);
     Utilities::analogWriteRGB(255, 0, 0);
     return;
   }
-  if(millis() / 1000 % 2) Utilities::analogWriteRGB(75, 0, 130);
+  if (millis() / 1000 % 2) Utilities::analogWriteRGB(75, 0, 130);
   else Utilities::analogWriteRGB(75, 0, 80);
 
   // Must be called while pairing so characteristics are available
@@ -279,15 +278,15 @@ void PairToPhone() {
 }
 
 void ListenForPhoneCommands() {
-  if(!phone || !commandChar.written()) return;
+  if (!phone || !commandChar.written()) return;
   // Grab access_token from userId of connected phone
   char rawCommand[30]{};
   String writtenVal = commandChar.value();
-  if(writtenVal == lastReadCommand) return;
+  if (writtenVal == lastReadCommand) return;
   lastReadCommand = writtenVal;
-  
+
   // happens when clearing char and cancelling form
-  if(writtenVal.length() <= 1) {
+  if (writtenVal.length() <= 1) {
     isAddingNewSensor = false;
     return;
   }
@@ -298,7 +297,7 @@ void ListenForPhoneCommands() {
 
   currentCommand = Utilities::parseRawCommand(rawCommand);
 
-  if(strcmp(currentCommand.type, COMMAND_START_SENSOR_SEARCH) == 0) {
+  if (strcmp(currentCommand.type, COMMAND_START_SENSOR_SEARCH) == 0) {
     Serial.println("Now adding new sensor");
     isAddingNewSensor = true;
   }
@@ -312,11 +311,11 @@ void ListenForPhoneCommands() {
 void UpdateBatteryLevel() {
   int avgVoltage = 0;
   uint8_t sampleSize = 30;
-  for(uint8_t i = 0; i < sampleSize; i++) {
+  for (uint8_t i = 0; i < sampleSize; i++) {
     avgVoltage += analogRead(BATT_PIN);
   }
   avgVoltage /= sampleSize;
-  int16_t rawLevel = (int16_t) map(avgVoltage, 760, 860, 0, 100);
+  int16_t rawLevel = (int16_t)map(avgVoltage, 760, 860, 0, 100);
   u_int8_t level = max(0, min(rawLevel, 100));
   Serial.print("avgVoltage is: ");
   Serial.print(avgVoltage);
@@ -326,9 +325,9 @@ void UpdateBatteryLevel() {
 }
 
 void ScanForSensor() {
-  if(pairingStartTime > 0) return;
-  if(lastEventTime > 0) {
-    if(millis() < lastEventTime + 20000) {
+  if (pairingStartTime > 0) return;
+  if (lastEventTime > 0) {
+    if (millis() < lastEventTime + 20000) {
       Serial.print("-");
     } else {
       lastEventTime = 0;
@@ -337,21 +336,21 @@ void ScanForSensor() {
     }
     return;
   }
-  if(scanStartTime == 0) {
+  if (scanStartTime == 0) {
     // this was the first call to start scanning
     UpdateBatteryLevel();
     BLE.scanForName(PERIPHERAL_NAME, true);
     scanStartTime = millis();
     Utilities::analogWriteRGB(255, 0, 0);
     Serial.print("Hub scanning for peripheral...");
-  } else if(millis() >= scanStartTime + 90000) {
+  } else if (millis() >= scanStartTime + 90000) {
     Serial.println("\nScan for peripheral timed out, restarting");
     BLE.stopScan();
     scanStartTime = 0;
     return;
   }
   BLEDevice scannedDevice = BLE.available();
-  if(scannedDevice.localName().length() > 0) {
+  if (scannedDevice.localName().length() > 0) {
     Serial.print("Scanned: (localName) ");
     Serial.println(scannedDevice.localName());
   } else if (scannedDevice.deviceName().length() > 0) {
@@ -369,18 +368,18 @@ void ScanForSensor() {
   for (uint8_t i = 0; i < knownSensorAddrsLen; i++) {
     Serial.print("Checking for a match with: ");
     Serial.println(knownSensorAddrs[i]);
-    if(scannedDevice.address() == knownSensorAddrs[i]) {
+    if (scannedDevice.address() == knownSensorAddrs[i]) {
       isKnownSensor = true;
       break;
     }
   }
   // if we're not adding new sensors and it's unknown
-  if(!isAddingNewSensor && !isKnownSensor) {
+  if (!isAddingNewSensor && !isKnownSensor) {
     Serial.println("Sensor not paired to this hub");
     return;
   }
   // if we're adding new sensors and it's already added
-  if(isAddingNewSensor && isKnownSensor) {
+  if (isAddingNewSensor && isKnownSensor) {
     Serial.println("Sensor already added to this hub");
     return;
   }
@@ -402,8 +401,8 @@ void ScanForSensor() {
   Serial.println(peripheral->advertisedServiceUuidCount());
   BLE.stopScan();
   scanStartTime = 0;
-  
-  if(isAddingNewSensor) {
+
+  if (isAddingNewSensor) {
     Serial.print("Waiting for command to connect~~~");
     String sensorFound = "SensorFound:";
     sensorFound.concat(peripheral->address());
@@ -414,13 +413,13 @@ void ScanForSensor() {
 }
 
 void ConnectToFoundSensor() {
-  if(isAddingNewSensor && strcmp(currentCommand.type, COMMAND_SENSOR_CONNECT) != 0) {
+  if (isAddingNewSensor && strcmp(currentCommand.type, COMMAND_SENSOR_CONNECT) != 0) {
     // TODO handle the form timing out at this location better
     BLE.poll();
     Serial.print("~");
     return;
   }
-  if(!peripheral->connect()) {
+  if (!peripheral->connect()) {
     Utilities::analogWriteRGB(255, 0, 0);
     Serial.println("\nFailed to connect retrying....");
     Utilities::bleDelay(1000, &BLE);
@@ -442,13 +441,13 @@ void ConnectToFoundSensor() {
   Serial.print("Has volts: ");
   Serial.println(peripheral->hasCharacteristic(VOLT_CHARACTERISTIC_UUID));
 
-  if(!isAddingNewSensor) return;
+  if (!isAddingNewSensor) return;
 
   const char* sensorSerial = peripheral->address().c_str();
   char mutationStr[155 + strlen(sensorSerial)]{};
   sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, isOpen: false, isConnected: true, serial:\\\"%s\\\"){id}}\",\"variables\":{}}", sensorSerial);
   DynamicJsonDocument doc = network.SendRequest(mutationStr, &BLE);
-  if(doc["data"] && doc["data"]["createSensor"]) {
+  if (doc["data"] && doc["data"]["createSensor"]) {
     const uint16_t id = (const uint16_t)(doc["data"]["createSensor"]["id"]);
     Serial.print("createSensor id: ");
     Serial.println(id);
@@ -456,8 +455,8 @@ void ConnectToFoundSensor() {
     Serial.println(peripheral->address());
     knownSensorAddrs[knownSensorAddrsLen] = peripheral->address();
     knownSensorAddrsLen++;
-    if(peripheral) peripheral->disconnect();
-    if(phone) {
+    if (peripheral) peripheral->disconnect();
+    if (phone) {
       commandChar.writeValue("SensorAdded:1");
       Utilities::bleDelay(2000, &BLE);
     }
@@ -467,7 +466,7 @@ void ConnectToFoundSensor() {
   } else {
     Serial.println("doc not valid");
   }
-  
+
   memset(currentCommand.type, 0, sizeof currentCommand.type);
   memset(currentCommand.value, 0, sizeof currentCommand.value);
 }
@@ -493,22 +492,22 @@ void MonitorSensor() {
     // volts.readValue(voltage);
     // Serial.print("Volts value: ");
     // Serial.println(voltage);
-    const char* address = peripheral->address().c_str();
-    char createEvent[100 + strlen(address)]{};
-    sprintf(createEvent, "{\"query\":\"mutation CreateEvent{createEvent(serial:\\\"%s\\\"){ id }}\",\"variables\":{}}\n", address);
-    DynamicJsonDocument doc = network.SendRequest(createEvent, &BLE);
-    if(doc["data"] && doc["data"]["createEvent"]) {
-      const uint16_t id = (const uint16_t)(doc["data"]["createEvent"]["id"]);
-      Serial.print("created event id is: ");
-      Serial.println(id);
-      // lastReadVoltage = voltage;
-    } else {
-      Serial.println("error parsing doc");
-    }
-    peripheral->disconnect();
-    Serial.print("Cooling down to prevent peripheral reconnection---");
-    setPairMode(true);
-    lastEventTime = millis();
+  const char* address = peripheral->address().c_str();
+  char createEvent[100 + strlen(address)]{};
+  sprintf(createEvent, "{\"query\":\"mutation CreateEvent{createEvent(serial:\\\"%s\\\"){ id }}\",\"variables\":{}}\n", address);
+  DynamicJsonDocument doc = network.SendRequest(createEvent, &BLE);
+  if (doc["data"] && doc["data"]["createEvent"]) {
+    const uint16_t id = (const uint16_t)(doc["data"]["createEvent"]["id"]);
+    Serial.print("created event id is: ");
+    Serial.println(id);
+    // lastReadVoltage = voltage;
+  } else {
+    Serial.println("error parsing doc");
+  }
+  peripheral->disconnect();
+  Serial.print("Cooling down to prevent peripheral reconnection---");
+  setPairMode(true);
+  lastEventTime = millis();
   // } 
   // else {
   //   Serial.println("Unable to read volts");
@@ -532,11 +531,11 @@ void FirmwareUpdate() {
 
   uint8_t buff[CHUNK_SIZE];
   uint16_t chunkLen = 0;
-  uint8_t emptyByteArr[1] = {0x00};
+  uint8_t emptyByteArr[1] = { 0x00 };
   while (fileLength > 0 && phone && phone->connected()) {
     BLE.available();
     chunkLen = transferChar.valueLength();
-    if(chunkLen < min(CHUNK_SIZE, fileLength)) {
+    if (chunkLen < min(CHUNK_SIZE, fileLength)) {
       continue;
     }
     transferChar.readValue(buff, chunkLen);
@@ -550,7 +549,7 @@ void FirmwareUpdate() {
     BLE.available();
 
 
-    for(uint8_t i = 0; i < chunkLen; i++) {
+    for (uint8_t i = 0; i < chunkLen; i++) {
       InternalStorage.write(buff[i]);
       fileLength--;
     }
@@ -564,7 +563,7 @@ void FirmwareUpdate() {
     Serial.println(" bytes. Can't continue with update.");
     return;
   }
-  
+
   String hubCommand = "HubUpdateEnd:";
   hubCommand.concat(VERSION + 1);
   Serial.print("Writing ");
@@ -583,10 +582,10 @@ void FirmwareUpdate() {
 }
 
 void UpdateGPS() {
-  if(!network.tokenData.isValid) return;
-  if(millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL) return;
-  if(millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL + GPS_BUFFER_TIME) {
-    if(!location.isPowered) location.setGPSPower(true);
+  if (!network.tokenData.isValid) return;
+  if (millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL) return;
+  if (millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL + GPS_BUFFER_TIME) {
+    if (!location.isPowered) location.setGPSPower(true);
     return;
   }
   location.lastGPSTime = millis();
@@ -596,16 +595,16 @@ void UpdateGPS() {
   char infBuffer[200]{};
   memset(infBuffer, 0, 200);
   bool didRead = Utilities::readUntilResp("AT+CGNSINF\r\r\n+CGNSINF: ", infBuffer);
-  if(!didRead) {
+  if (!didRead) {
     location.setGPSPower(false);
     return;
-  } 
+  }
 
   Serial.print("\nBuffer: ");
   Serial.println(infBuffer);
   LocReading reading = location.parseInf(infBuffer);
   Serial.println("\n\r*****Updating GPS location*****");
-  if(!reading.hasFix) {
+  if (!reading.hasFix) {
     Serial.println("No GPS fix yet, aborting");
     location.setGPSPower(false);
     return;
@@ -613,7 +612,7 @@ void UpdateGPS() {
   location.printLocReading(reading);
 
   double dist = location.distanceFromLastPoint(reading.lat, reading.lng);
-  if(dist < 20) {
+  if (dist < 20) {
     Serial.print("New location is less than 20m away from previously sent location, aborting.\nDistance(m): ");
     Serial.println(dist);
     location.setGPSPower(false);
@@ -623,7 +622,7 @@ void UpdateGPS() {
   char createLocation[200]{};
   sprintf(createLocation, "{\"query\":\"mutation CreateLocation{createLocation(lat:%.5f, lng: %.5f, hdop: %.2f, speed: %.2f, course: %.2f, age: 0){ id }}\",\"variables\":{}}", reading.lat, reading.lng, reading.hdop, reading.kmph, reading.deg);
   DynamicJsonDocument doc = network.SendRequest(createLocation, &BLE);
-  if(doc["data"] && doc["data"]["createLocation"]) {
+  if (doc["data"] && doc["data"]["createLocation"]) {
     const uint16_t id = (const uint16_t)(doc["data"]["createLocation"]["id"]);
     Serial.print("created location id is: ");
     Serial.println(id);
@@ -638,31 +637,28 @@ void loop() {
 
   CheckInput();
 
-  if(strcmp(currentCommand.type, "StartHubUpdate") == 0) {
+  if (strcmp(currentCommand.type, "StartHubUpdate") == 0) {
     FirmwareUpdate();
   }
 
   // Hub has entered pairing mode
-  if(pairingStartTime > 0) {
+  if (pairingStartTime > 0) {
     PairToPhone();
-  }
-  else if(phone) {
+  } else if (phone) {
     ListenForPhoneCommands();
   }
 
   // Scan for peripheral
-  if(!peripheral) {
+  if (!peripheral) {
     ScanForSensor();
-  }
-  else if (!peripheral->connected()) {
+  } else if (!peripheral->connected()) {
     ConnectToFoundSensor();
-  }
-  else {
+  } else {
     MonitorSensor();
   }
 
   // Update GPS
-  if(!peripheral && pairingStartTime == 0) {
+  if (!peripheral && pairingStartTime == 0) {
     UpdateGPS();
   }
 

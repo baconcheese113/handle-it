@@ -18,7 +18,7 @@ void Location::printLocReading(LocReading reading) {
   Serial.println(reading.deg);
 }
 
-double Location::distance(double lat1, double lng1, double lat2, double lng2) { 
+double Location::distance(double lat1, double lng1, double lat2, double lng2) {
   lat1 = Location::getRadians(lat1);
   lng1 = Location::getRadians(lng1);
   lat2 = Location::getRadians(lat2);
@@ -39,21 +39,21 @@ LocReading Location::parseInf(char* infBuffer) {
   char tempBuf[20]{};
   LocReading reading;
   memset(tempBuf, 0, 20);
-  for(uint8_t idx = 0; idx < strlen(infBuffer); idx++) {
-    if(infBuffer[idx] == ',') {
+  for (uint8_t idx = 0; idx < strlen(infBuffer); idx++) {
+    if (infBuffer[idx] == ',') {
       tempBuf[idx - paramStart] = '\0';
-      if(paramStart < idx) {
-        if(paramNum == 1) {
+      if (paramStart < idx) {
+        if (paramNum == 1) {
           reading.hasFix = tempBuf[0] == '1';
-        } else if(paramNum == 3) { // Lat
+        } else if (paramNum == 3) { // Lat
           reading.lat = atof(tempBuf);
-        } else if(paramNum == 4) { // Lng
+        } else if (paramNum == 4) { // Lng
           reading.lng = atof(tempBuf);
-        } else if(paramNum == 6) { // kmph
+        } else if (paramNum == 6) { // kmph
           reading.kmph = atof(tempBuf);
-        } else if(paramNum == 7) { // deg
+        } else if (paramNum == 7) { // deg
           reading.deg = atof(tempBuf);
-        } else if(paramNum == 10) { // HDOP
+        } else if (paramNum == 10) { // HDOP
           reading.hdop = atof(tempBuf);
         }
       }
@@ -69,13 +69,13 @@ LocReading Location::parseInf(char* infBuffer) {
 
 void Location::setGPSPower(bool turnOn) {
   isPowered = turnOn;
-  if(turnOn) Serial.println("\nGPS check scheduled, warming up GPS module");
+  if (turnOn) Serial.println("\nGPS check scheduled, warming up GPS module");
   else Serial.println("\nGPS module powering off");
   Serial1.print("AT+CGNSPWR=");
   Serial1.println(turnOn ? "1" : "0");
   Serial1.flush();
   delay(3);
-  while(Serial1.available()) {
+  while (Serial1.available()) {
     Serial.write(Serial1.read());
   }
 }
