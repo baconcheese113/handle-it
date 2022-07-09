@@ -5,9 +5,9 @@
 
 FlashStorage(flashTokenData, TokenData);
 
-uint8_t AT_HTTPDATA_IDX = 7;
-uint8_t AT_HTTPACTION_IDX = 8;
-uint8_t AT_HTTPREAD_IDX = 9;
+uint8_t AT_HTTPDATA_IDX = 6;
+uint8_t AT_HTTPACTION_IDX = 7;
+uint8_t AT_HTTPREAD_IDX = 8;
 
 void Network::InitializeAccessToken() {
     tokenData = flashTokenData.read();
@@ -30,7 +30,7 @@ void Network::SetAccessToken(const char newAccessToken[100]) {
 DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
     setFunMode(true);
     Utilities::analogWriteRGB(0, 0, 60);
-    Utilities::bleDelay(1000, BLE);
+    Utilities::bleDelay(2000, BLE);
     Serial.println("Sending request");
     Serial.println(query);
 
@@ -48,7 +48,7 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
     sprintf(lenCommand, "AT+HTTPDATA=%d,%d", strlen(query), 5000);
 
     const char* const commands[] = {
-        "AT+SAPBR=3,1,\"APN\",\"hologram\"",
+        // "AT+SAPBR=3,1,\"APN\",\"hologram\"",
         // "AT+SAPBR=3,1,\"Contype\",\"GPRS\"",
         "AT+SAPBR=1,1",
         "AT+HTTPINIT",

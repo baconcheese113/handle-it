@@ -115,7 +115,7 @@ void onBLEConnected(BLEDevice d) {
     Serial.println("command.type is UserId");
   }
   char loginMutationStr[100 + strlen(command.value) + strlen(deviceImei)]{};
-  sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\")}\",\"variables\":{}}", command.value, deviceImei);
+  sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\", imei:\\\"%s\\\")}\",\"variables\":{}}", command.value, BLE.address().c_str(), deviceImei);
   DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr, &BLE);
   if(loginDoc["data"] && loginDoc["data"]["loginAsHub"]) {
     const char* token = (const char *)(loginDoc["data"]["loginAsHub"]);
@@ -204,6 +204,8 @@ void setup() {
   Serial.print(". Free Memory is: ");
   Serial.println(Utilities::freeMemory());
 
+  Serial.print("BLE address: ");
+  Serial.println(BLE.address());
   // BLE service to advertise to phone
   BLE.setLocalName(DEVICE_NAME);
   BLE.setAdvertisedService(hubService);
@@ -314,7 +316,7 @@ void UpdateBatteryLevel() {
     avgVoltage += analogRead(BATT_PIN);
   }
   avgVoltage /= sampleSize;
-  int8_t rawLevel = (int8_t) map(avgVoltage, 760, 860, 0, 100);
+  int16_t rawLevel = (int16_t) map(avgVoltage, 760, 860, 0, 100);
   u_int8_t level = max(0, min(rawLevel, 100));
   Serial.print("avgVoltage is: ");
   Serial.print(avgVoltage);
@@ -363,17 +365,24 @@ void ScanForSensor() {
   Serial.print("\nFound possible sensor: ");
   Serial.println(scannedDevice.address());
 
-  if(!isAddingNewSensor) {
-    bool isKnownSensor = false;
-    for (uint8_t i = 0; i < knownSensorAddrsLen; i++) {
-      Serial.print("Checking for a match with: ");
-      Serial.println(knownSensorAddrs[i]);
-      if(scannedDevice.address() == knownSensorAddrs[i]) {
-        isKnownSensor = true;
-        break;
-      }
+  bool isKnownSensor = false;
+  for (uint8_t i = 0; i < knownSensorAddrsLen; i++) {
+    Serial.print("Checking for a match with: ");
+    Serial.println(knownSensorAddrs[i]);
+    if(scannedDevice.address() == knownSensorAddrs[i]) {
+      isKnownSensor = true;
+      break;
     }
-    if(!isKnownSensor) return;
+  }
+  // if we're not adding new sensors and it's unknown
+  if(!isAddingNewSensor && !isKnownSensor) {
+    Serial.println("Sensor not paired to this hub");
+    return;
+  }
+  // if we're adding new sensors and it's already added
+  if(isAddingNewSensor && isKnownSensor) {
+    Serial.println("Sensor already added to this hub");
+    return;
   }
 
   // We found a Sensor!
@@ -437,7 +446,7 @@ void ConnectToFoundSensor() {
 
   const char* sensorSerial = peripheral->address().c_str();
   char mutationStr[155 + strlen(sensorSerial)]{};
-  sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, isOpen: true, isConnected: true, serial:\\\"%s\\\"){id}}\",\"variables\":{}}", sensorSerial);
+  sprintf(mutationStr, "{\"query\":\"mutation createSensor{createSensor(doorColumn: 0, doorRow: 0, isOpen: false, isConnected: true, serial:\\\"%s\\\"){id}}\",\"variables\":{}}", sensorSerial);
   DynamicJsonDocument doc = network.SendRequest(mutationStr, &BLE);
   if(doc["data"] && doc["data"]["createSensor"]) {
     const uint16_t id = (const uint16_t)(doc["data"]["createSensor"]["id"]);
