@@ -308,15 +308,30 @@ void ListenForPhoneCommands() {
   Serial.println(currentCommand.value);
 }
 
+// Returns battery level represented from 0 - 100
+double getBatteryLevel(double volts) {
+  if(volts > 845) return 100.0;
+  if(volts > 780) {
+    return (-.00280590 * pow(volts, 2)) + (4.84906009 * volts) - 1994.38823741;
+  }
+  if(volts > 759) {
+    return (-.00732943 * pow(volts, 3)) + (16.96151031 * pow(volts, 2)) - (13080.35413096 * volts) + 3361569.81985325;
+  }
+  if(volts > 725) {
+    return (.01635 * pow(volts, 2)) - (23.57544 * volts) + 8499.67268;
+  }
+  return 0.0;
+}
+
 void UpdateBatteryLevel() {
-  int avgVoltage = 0;
-  uint8_t sampleSize = 30;
+  double avgVoltage = 0;
+  uint8_t sampleSize = 90;
   for (uint8_t i = 0; i < sampleSize; i++) {
     avgVoltage += analogRead(BATT_PIN);
+    if(i % 5 == 0) delay(1);
   }
   avgVoltage /= sampleSize;
-  int16_t rawLevel = (int16_t)map(avgVoltage, 760, 860, 0, 100);
-  u_int8_t level = max(0, min(rawLevel, 100));
+  uint8_t level = (uint8_t)round(getBatteryLevel(avgVoltage));
   Serial.print("avgVoltage is: ");
   Serial.print(avgVoltage);
   Serial.print(", level: ");

@@ -6,7 +6,7 @@
 #define RGB_B  5
 
 namespace Utilities {
-  void analogWriteRGB(u_int8_t r, u_int8_t g, u_int8_t b) {
+  void analogWriteRGB(uint8_t r, uint8_t g, uint8_t b) {
     Serial.print("Writing rgb value: ");
     Serial.print(r);
     Serial.print(", ");
@@ -23,7 +23,7 @@ namespace Utilities {
     Serial.println("in parseRawCmd");
     Command res;
     int8_t valueStartIdx = -1;
-    for (u_int8_t i = 0; i < strlen(rawCmd); i++) {
+    for (uint8_t i = 0; i < strlen(rawCmd); i++) {
       if (rawCmd[i] == ':' && valueStartIdx < 0) { // if delimeter
         valueStartIdx = i + 1;
       } else if (valueStartIdx >= 0) { // if parsing value (after delimeter)
