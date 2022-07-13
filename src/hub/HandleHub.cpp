@@ -46,6 +46,7 @@ bool isAdvertising = false;
 bool isAddingNewSensor = false;
 unsigned long scanStartTime = 0;
 unsigned long lastEventTime = 0;
+unsigned long lastBatteryUpdateTime = 0;
 
 unsigned long pairingStartTime = 0;
 unsigned long pairButtonHoldStartTime = 0;
@@ -310,14 +311,14 @@ void ListenForPhoneCommands() {
 
 // Returns battery level represented from 0 - 100
 double getBatteryLevel(double volts) {
-  if(volts > 845) return 100.0;
-  if(volts > 780) {
+  if (volts > 845) return 100.0;
+  if (volts > 780) {
     return (-.00280590 * pow(volts, 2)) + (4.84906009 * volts) - 1994.38823741;
   }
-  if(volts > 759) {
+  if (volts > 759) {
     return (-.00732943 * pow(volts, 3)) + (16.96151031 * pow(volts, 2)) - (13080.35413096 * volts) + 3361569.81985325;
   }
-  if(volts > 725) {
+  if (volts > 725) {
     return (.01635 * pow(volts, 2)) - (23.57544 * volts) + 8499.67268;
   }
   return 0.0;
@@ -328,15 +329,29 @@ void UpdateBatteryLevel() {
   uint8_t sampleSize = 90;
   for (uint8_t i = 0; i < sampleSize; i++) {
     avgVoltage += analogRead(BATT_PIN);
-    if(i % 5 == 0) delay(1);
+    if (i % 5 == 0) delay(1);
   }
   avgVoltage /= sampleSize;
-  uint8_t level = (uint8_t)round(getBatteryLevel(avgVoltage));
+  double level = getBatteryLevel(avgVoltage);
   Serial.print("avgVoltage is: ");
   Serial.print(avgVoltage);
   Serial.print(", level: ");
   Serial.println(level);
-  battLevelChar.writeValue(level);
+  battLevelChar.writeValue((uint8_t)round(level));
+
+  lastBatteryUpdateTime = millis();
+  if (!network.tokenData.isValid) return;
+
+  char updateHubBatteryLevel[150]{};
+  sprintf(updateHubBatteryLevel, "{\"query\":\"mutation UpdateHubBatteryLevel{updateHubBatteryLevel(volts:%.2f, percent:%.2f){ id }}\",\"variables\":{}}", avgVoltage, level);
+  DynamicJsonDocument doc = network.SendRequest(updateHubBatteryLevel, &BLE);
+  if (doc["data"] && doc["data"]["updateHubBatteryLevel"]) {
+    const uint16_t id = (const uint16_t)(doc["data"]["updateHubBatteryLevel"]["id"]);
+    Serial.print("updatedHubBatteryLevel hubId is: ");
+    Serial.println(id);
+  } else {
+    Serial.println("error parsing doc");
+  }
 }
 
 void ScanForSensor() {
@@ -353,7 +368,6 @@ void ScanForSensor() {
   }
   if (scanStartTime == 0) {
     // this was the first call to start scanning
-    UpdateBatteryLevel();
     BLE.scanForName(PERIPHERAL_NAME, true);
     scanStartTime = millis();
     Utilities::analogWriteRGB(255, 0, 0);
@@ -673,8 +687,11 @@ void loop() {
   }
 
   // Update GPS
-  if (!peripheral && pairingStartTime == 0) {
+  if (!phone && !peripheral && pairingStartTime == 0) {
     UpdateGPS();
+    if (millis() > lastBatteryUpdateTime + (15 * 60 * 1000)) {
+      UpdateBatteryLevel();
+    }
   }
 
   Utilities::idle(200);
