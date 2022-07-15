@@ -4,6 +4,18 @@
 #include <Arduino.h>
 #include <ArduinoBLE.h>
 
+// All pins for the project should be declared here and set in setupPins
+
+// Digital pins
+#define PAIR_PIN  10
+#define RGB_R  9
+#define RGB_G  6
+#define RGB_B  5
+#define SIM_MOSFET 4
+
+// Analog pins
+#define BATT_PIN A0
+
 struct Command {
   char type[30]{};
   char value[50]{};
@@ -11,9 +23,14 @@ struct Command {
 
 namespace Utilities {
   /**
+   * Single place to register all used I/O pins
+   */
+  void setupPins();
+
+  /**
    * Writes to pins 9, 3, and 2 RGB values from 0 - 255
   **/
-  void analogWriteRGB(uint8_t r, uint8_t g, uint8_t b);
+  void analogWriteRGB(uint8_t r, uint8_t g, uint8_t b, bool print = true);
 
   /**
    * Parses BLE char arrays separated by a colon ( : ) delimeter into a Command struct
@@ -40,7 +57,7 @@ namespace Utilities {
    * Reads n bytes into buffer (ignoring head) from Serial1
    * Returns true if OK received, false otherwise
   **/
-  bool readUntilResp(const char* head, char* buffer);
+  bool readUntilResp(const char* head, char* buffer, BLELocalDevice* BLE = nullptr, uint16_t timeout = 1000);
 
   /**
    * Prints a char array as bytes up to the termination character

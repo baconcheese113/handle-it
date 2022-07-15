@@ -1,4 +1,5 @@
 #include <./hub/Location.h>
+#include <./hub/Utilities.h>
 #include <Arduino.h>
 
 double Location::getRadians(double degrees) {
@@ -74,8 +75,6 @@ void Location::setGPSPower(bool turnOn) {
   Serial1.print("AT+CGNSPWR=");
   Serial1.println(turnOn ? "1" : "0");
   Serial1.flush();
-  delay(3);
-  while (Serial1.available()) {
-    Serial.write(Serial1.read());
-  }
+  char resp[10];
+  Utilities::readUntilResp("AT+CGNSPWR", resp, nullptr, 10);
 }

@@ -6,11 +6,6 @@
 #include <./hub/Network.h>
 #include <./hub/Location.h>
 
-// Digital pins
-#define PAIR_PIN  10
-// Analog pins
-#define BATT_PIN A0
-
 const int VERSION = 1;
 
 const char* DEVICE_NAME = "HandleIt Hub";
@@ -115,6 +110,11 @@ void onBLEConnected(BLEDevice d) {
   } else {
     Serial.println("command.type is UserId");
   }
+
+  if (!network.setPowerOnAndWaitForReg(&BLE)) return;
+  BLE.poll(); // helps recover from starting up
+
+  Serial.println("\n### setPowerOn and waited, proceeding to network req ###");
   char loginMutationStr[100 + strlen(command.value) + strlen(deviceImei)]{};
   sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\", imei:\\\"%s\\\")}\",\"variables\":{}}", command.value, BLE.address().c_str(), deviceImei);
   DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr, &BLE);
@@ -131,6 +131,7 @@ void onBLEConnected(BLEDevice d) {
     // cmaglie/FlashStorage
   } else {
     Serial.println("Error reading token");
+    network.setPower(false);
     return;
   }
 
@@ -149,8 +150,8 @@ void onBLEConnected(BLEDevice d) {
     setPairMode(false);
   } else {
     Serial.println("Error getting hubId");
-    return;
   }
+  network.setPower(false);
 }
 
 void onBLEDisconnected(BLEDevice d) {
@@ -174,9 +175,7 @@ void onBLEDisconnected(BLEDevice d) {
 }
 
 void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(PAIR_PIN, INPUT);
-  pinMode(BATT_PIN, INPUT);
+  Utilities::setupPins();
 
   Utilities::analogWriteRGB(0, 0, 0);
   Serial.begin(115200);
@@ -186,12 +185,29 @@ void setup() {
   while (!Serial1);
   Serial.println("Serial1 started at 115200 baud");
   while (Serial1.available()) Serial1.read();
+
+  // while(true) {
+  //   if(Serial.available()) {
+  //     char c = Serial.read();
+  //     if(c == 'p') {
+  //       Serial.print("isPoweredOn: ");
+  //       Serial.print(network.isPoweredOn());
+  //     }
+  //     if(c == 'y') network.setPower(true);
+  //     if(c == 'n') network.setPower(false);
+  //     if(c == 'w') network.waitForPowerOn();
+  //     if(c == 'e') network.setPowerOnAndWaitForReg();
+  //     if(c == 'b') network.setPowerOnAndWaitForReg(&BLE);
+  //   }
+  // }
+
+  network.setPower(true);
+  network.waitForPowerOn();
   while (strlen(deviceImei) < 1) {
     network.GetImei(deviceImei);
     Serial.print("Device IMEI: ");
     Serial.println(deviceImei);
   }
-  network.setFunMode(false);
   location.setGPSPower(false);
 
   // begin BLE initialization
@@ -225,7 +241,7 @@ void setup() {
 
   network.InitializeAccessToken();
 
-  if (network.tokenData.isValid) {
+  if (network.tokenData.isValid && network.setPowerOnAndWaitForReg()) {
     char sensorQuery[] = "{\"query\":\"query getMySensors{hubViewer{sensors{serial}}}\",\"variables\":{}}";
     DynamicJsonDocument doc = network.SendRequest(sensorQuery, &BLE);
     if (doc["data"] && doc["data"]["hubViewer"] && doc["data"]["hubViewer"]["sensors"]) {
@@ -244,6 +260,7 @@ void setup() {
       Serial.println(strlen(network.tokenData.accessToken));
     }
   }
+  network.setPower(false);
 }
 
 void CheckInput() {
@@ -261,6 +278,8 @@ void CheckInput() {
     // enter pair mode
     pairingStartTime = millis();
     setPairMode(true);
+    // Warm up SIM module
+    network.setPower(true);
   }
 }
 
@@ -268,6 +287,7 @@ void PairToPhone() {
   if (millis() > pairingStartTime + 60000) {
     // pairing timed out
     setPairMode(false);
+    network.setPower(false);
     Utilities::analogWriteRGB(255, 0, 0);
     return;
   }
@@ -340,7 +360,7 @@ void UpdateBatteryLevel() {
   battLevelChar.writeValue((uint8_t)round(level));
 
   lastBatteryUpdateTime = millis();
-  if (!network.tokenData.isValid) return;
+  if (!network.tokenData.isValid || !network.setPowerOnAndWaitForReg()) return;
 
   char updateHubBatteryLevel[150]{};
   sprintf(updateHubBatteryLevel, "{\"query\":\"mutation UpdateHubBatteryLevel{updateHubBatteryLevel(volts:%.2f, percent:%.2f){ id }}\",\"variables\":{}}", avgVoltage, level);
@@ -352,6 +372,7 @@ void UpdateBatteryLevel() {
   } else {
     Serial.println("error parsing doc");
   }
+  network.setPower(false);
 }
 
 void ScanForSensor() {
@@ -450,7 +471,9 @@ void ConnectToFoundSensor() {
   }
   if (!peripheral->connect()) {
     Utilities::analogWriteRGB(255, 0, 0);
-    Serial.println("\nFailed to connect retrying....");
+    Serial.println("\nFailed to connect, resetting....");
+    delete peripheral;
+    peripheral = nullptr;
     Utilities::bleDelay(1000, &BLE);
     return;
   }
@@ -471,6 +494,12 @@ void ConnectToFoundSensor() {
   Serial.println(peripheral->hasCharacteristic(VOLT_CHARACTERISTIC_UUID));
 
   if (!isAddingNewSensor) return;
+
+  if (!network.setPowerOnAndWaitForReg(&BLE)) {
+    peripheral->disconnect();
+    return;
+  }
+  BLE.poll();
 
   const char* sensorSerial = peripheral->address().c_str();
   char mutationStr[155 + strlen(sensorSerial)]{};
@@ -521,6 +550,11 @@ void MonitorSensor() {
     // volts.readValue(voltage);
     // Serial.print("Volts value: ");
     // Serial.println(voltage);
+  if (!network.setPowerOnAndWaitForReg(&BLE)) {
+    peripheral->disconnect();
+    return;
+  }
+  BLE.poll();
   const char* address = peripheral->address().c_str();
   char createEvent[100 + strlen(address)]{};
   sprintf(createEvent, "{\"query\":\"mutation CreateEvent{createEvent(serial:\\\"%s\\\"){ id }}\",\"variables\":{}}\n", address);
@@ -533,6 +567,7 @@ void MonitorSensor() {
   } else {
     Serial.println("error parsing doc");
   }
+  network.setPower(false);
   peripheral->disconnect();
   Serial.print("Cooling down to prevent peripheral reconnection---");
   setPairMode(true);
@@ -614,7 +649,12 @@ void UpdateGPS() {
   if (!network.tokenData.isValid) return;
   if (millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL) return;
   if (millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL + GPS_BUFFER_TIME) {
-    if (!location.isPowered) location.setGPSPower(true);
+    if (!location.isPowered) {
+      network.setPower(true);
+      network.waitForPowerOn();
+      location.setGPSPower(true);
+    }
+    return;
     return;
   }
   location.lastGPSTime = millis();
@@ -626,6 +666,7 @@ void UpdateGPS() {
   bool didRead = Utilities::readUntilResp("AT+CGNSINF\r\r\n+CGNSINF: ", infBuffer);
   if (!didRead) {
     location.setGPSPower(false);
+    network.setPower(false);
     return;
   }
 
@@ -636,6 +677,7 @@ void UpdateGPS() {
   if (!reading.hasFix) {
     Serial.println("No GPS fix yet, aborting");
     location.setGPSPower(false);
+    network.setPower(false);
     return;
   }
   location.printLocReading(reading);
@@ -645,6 +687,7 @@ void UpdateGPS() {
     Serial.print("New location is less than 20m away from previously sent location, aborting.\nDistance(m): ");
     Serial.println(dist);
     location.setGPSPower(false);
+    network.setPower(false);
     return;
   }
 
@@ -660,6 +703,7 @@ void UpdateGPS() {
     Serial.println("error parsing doc");
   }
   location.setGPSPower(false);
+  network.setPower(false);
 }
 
 void loop() {
@@ -689,7 +733,7 @@ void loop() {
   // Update GPS
   if (!phone && !peripheral && pairingStartTime == 0) {
     UpdateGPS();
-    if (millis() > lastBatteryUpdateTime + (15 * 60 * 1000)) {
+    if (millis() > lastBatteryUpdateTime + (4 * 60 * 1000)) {
       UpdateBatteryLevel();
     }
   }

@@ -14,7 +14,7 @@ struct LocReading {
 const unsigned long GPS_UPDATE_INTERVAL = 180000;
 // When a check is ready to occur, the module is 
 // powered on for this amount of time before reading
-const unsigned long GPS_BUFFER_TIME = 10000;
+const unsigned long GPS_BUFFER_TIME = 20000;
 
 class Location
 {

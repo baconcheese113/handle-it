@@ -1,18 +1,29 @@
 #include <Arduino.h>
 #include <ArduinoLowPower.h>
 #include <./hub/Utilities.h>
-#define RGB_R  9
-#define RGB_G  6
-#define RGB_B  5
 
 namespace Utilities {
-  void analogWriteRGB(uint8_t r, uint8_t g, uint8_t b) {
-    Serial.print("Writing rgb value: ");
-    Serial.print(r);
-    Serial.print(", ");
-    Serial.print(g);
-    Serial.print(", ");
-    Serial.println(b);
+  void setupPins() {
+    pinMode(LED_BUILTIN, OUTPUT);
+
+    pinMode(PAIR_PIN, INPUT);
+    pinMode(RGB_R, OUTPUT);
+    pinMode(RGB_G, OUTPUT);
+    pinMode(RGB_B, OUTPUT);
+    pinMode(SIM_MOSFET, OUTPUT);
+
+    pinMode(BATT_PIN, INPUT);
+  }
+
+  void analogWriteRGB(uint8_t r, uint8_t g, uint8_t b, bool print) {
+    if (print) {
+      Serial.print("Writing rgb value: ");
+      Serial.print(r);
+      Serial.print(", ");
+      Serial.print(g);
+      Serial.print(", ");
+      Serial.println(b);
+    }
     int divisor = 1;
     analogWrite(RGB_R, r / divisor);
     analogWrite(RGB_G, g / divisor);
@@ -59,7 +70,7 @@ namespace Utilities {
     unsigned long endTime = millis() + milliseconds;
     while (millis() < endTime) {
       BLE->poll();
-      idle(50);
+      delay(1);
     }
   }
 
@@ -70,13 +81,13 @@ namespace Utilities {
     }
   }
 
-  bool readUntilResp(const char* head, char* buffer) {
+  bool readUntilResp(const char* head, char* buffer, BLELocalDevice* BLE, uint16_t timeout) {
     bool didReadHead = strlen(head) == 0;
     uint16_t size = 0;
     uint16_t idx = 0;
     char c;
-    unsigned long timeout = millis() + 2000;
-    while (millis() < timeout)
+    unsigned long dropDeadTime = millis() + timeout;
+    while (millis() < dropDeadTime)
     {
       while (Serial1.available()) {
         c = Serial1.read();
@@ -92,35 +103,37 @@ namespace Utilities {
           size++;
         }
         idx++;
+
+        if (size >= 6
+          && buffer[size - 1] == 10
+          && buffer[size - 2] == 13
+          && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K'
+          ) {
+          // OK response
+          buffer[size - 8] = '\0';
+          return true;
+        }
+        if (size >= 8
+          && buffer[size - 1] == 10
+          && buffer[size - 2] == 13
+          && buffer[size - 8] == 10 && buffer[size - 7] == 'E' && buffer[size - 6] == 'R' && buffer[size - 5] == 'R' && buffer[size - 4] == 'O' && buffer[size - 3] == 'R'
+          ) {
+          // ERROR response
+          buffer[size - 9] = '\0';
+          Serial.println("ERROR received");
+          return false;
+        }
       }
-      if (size >= 6
-        && buffer[size - 1] == 10
-        && buffer[size - 2] == 13
-        && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K'
-        ) {
-        // OK response
-        buffer[size - 8] = '\0';
-        return true;
-      }
-      if (size >= 8
-        && buffer[size - 1] == 10
-        && buffer[size - 2] == 13
-        && buffer[size - 8] == 10 && buffer[size - 7] == 'E' && buffer[size - 6] == 'R' && buffer[size - 5] == 'R' && buffer[size - 4] == 'O' && buffer[size - 3] == 'R'
-        ) {
-        // ERROR response
-        buffer[size - 9] = '\0';
-        Serial.println("ERROR received");
-        return false;
-      }
+      if (BLE) Utilities::bleDelay(1, BLE);
     }
-    Serial.println(">>TIMEOUT<<");
+    Serial.println(">>READ TIMEOUT<<");
     return false;
   }
 
   void printBytes(char* buffer) {
     Serial.println("\n===== Printing Bytes =======");
     for (uint16_t idx = 0; idx < strlen(buffer); idx++) {
-      Serial.print("0");
+      if ((uint8_t)buffer[idx] < 100) Serial.print("0");
       Serial.print((uint8_t)buffer[idx]);
       if (buffer[idx] == '\n') Serial.println("");
       else Serial.print(" ");
