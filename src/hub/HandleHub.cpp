@@ -74,12 +74,16 @@ void onBLEConnected(BLEDevice d) {
   Serial.print("\n>>> BLEConnected to: ");
   Serial.println(d.address());
 
-  bool dNameMatch = d.deviceName().compareTo(PERIPHERAL_NAME) == 0 || d.localName().compareTo(PERIPHERAL_NAME) == 0;
+  // d not populated with localName for some reason
+  bool dNameMatch = peripheral && peripheral->address().compareTo(d.address()) == 0;
+
   setPairMode(false);
   if (dNameMatch) {
     // if we just connectd to a peripheral then there's nothing else to do
+    Serial.println("Connected to a sensor");
     return;
   }
+  Serial.println("Connected to a phone");
   phone = new BLEDevice();
   *phone = d;
   digitalWrite(LED_BUILTIN, HIGH);
@@ -158,10 +162,20 @@ void onBLEConnected(BLEDevice d) {
 void onBLEDisconnected(BLEDevice d) {
   Serial.print("\n>>> BLEDisconnecting from: ");
   Serial.println(d.address());
+  if(phone) {
+    Serial.print("Phone address: ");
+    Serial.println(phone->address());
+  }
+  if(peripheral) {
+    Serial.print("Peripheral address: ");
+    Serial.println(peripheral->address());
+  }
   digitalWrite(LED_BUILTIN, LOW);
   if (peripheral && peripheral->address() == d.address()) {
     Serial.println("Peripheral disconnected");
     Utilities::analogWriteRGB(0, 0, 0);
+    delete peripheral;
+    peripheral = nullptr;
   } else if (phone && phone->address() == d.address()) {
     Serial.println("Phone disconnected");
     delete phone;
@@ -171,8 +185,31 @@ void onBLEDisconnected(BLEDevice d) {
     memset(currentCommand.value, 0, sizeof currentCommand.value);
     commandChar.writeValue("");
   }
-  delete peripheral;
-  peripheral = nullptr;
+}
+
+bool initializeBLE() {
+  if (!BLE.begin()) {
+    Serial.println("starting BLE failed!");
+    return false;
+  }
+  // BLE service to advertise to phone
+  BLE.setLocalName(DEVICE_NAME);
+  BLE.setAdvertisedService(hubService);
+  hubService.addCharacteristic(commandChar);
+  hubService.addCharacteristic(transferChar);
+  hubService.addCharacteristic(firmwareChar);
+  BLE.addService(hubService);
+  firmwareChar.writeValue(VERSION);
+  battService.addCharacteristic(battLevelChar);
+  BLE.addService(battService);
+
+  // Bluetooth LE connection handlers
+  BLE.setEventHandler(BLEConnected, onBLEConnected);
+  BLE.setEventHandler(BLEDisconnected, onBLEDisconnected);
+  BLE.stopAdvertise();
+  Serial.print("BLE address: ");
+  Serial.println(BLE.address());
+  return true;
 }
 
 void setup() {
@@ -212,33 +249,11 @@ void setup() {
   location.setGPSPower(false);
 
   // begin BLE initialization
-  if (!BLE.begin()) {
-    Serial.println("starting BLE failed!");
-
-    while (1);
-  }
+  if (!initializeBLE()) while (true);
   Serial.print("Sketch version ");
   Serial.print(VERSION);
   Serial.print(". Free Memory is: ");
   Serial.println(Utilities::freeMemory());
-
-  Serial.print("BLE address: ");
-  Serial.println(BLE.address());
-  // BLE service to advertise to phone
-  BLE.setLocalName(DEVICE_NAME);
-  BLE.setAdvertisedService(hubService);
-  hubService.addCharacteristic(commandChar);
-  hubService.addCharacteristic(transferChar);
-  hubService.addCharacteristic(firmwareChar);
-  BLE.addService(hubService);
-  firmwareChar.writeValue(VERSION);
-  battService.addCharacteristic(battLevelChar);
-  BLE.addService(battService);
-
-  // Bluetooth LE connection handlers
-  BLE.setEventHandler(BLEConnected, onBLEConnected);
-  BLE.setEventHandler(BLEDisconnected, onBLEDisconnected);
-  BLE.stopAdvertise();
 
   network.InitializeAccessToken();
 
@@ -401,7 +416,7 @@ void ScanForSensor() {
     return;
   }
   BLEDevice scannedDevice = BLE.available();
-  if (scannedDevice.localName().length() > 0) {
+  if (scannedDevice.hasLocalName()) {
     Serial.print("Scanned: (localName) ");
     Serial.println(scannedDevice.localName());
   } else if (scannedDevice.deviceName().length() > 0) {
@@ -520,12 +535,13 @@ void ConnectToFoundSensor() {
       Utilities::bleDelay(2000, &BLE);
     }
     Serial.print("Cooling down to prevent peripheral reconnection---");
-    setPairMode(true);
+    setPairMode(false);
     lastEventTime = millis();
   } else {
     Serial.println("doc not valid");
   }
 
+  network.setPower(false);
   memset(currentCommand.type, 0, sizeof currentCommand.type);
   memset(currentCommand.value, 0, sizeof currentCommand.value);
 }
@@ -553,6 +569,7 @@ void MonitorSensor() {
     // Serial.println(voltage);
   if (!network.setPowerOnAndWaitForReg(&BLE)) {
     peripheral->disconnect();
+    network.setPower(false);
     return;
   }
   BLE.poll();
@@ -569,7 +586,7 @@ void MonitorSensor() {
     Serial.println("error parsing doc");
   }
   network.setPower(false);
-  peripheral->disconnect();
+  if(peripheral) peripheral->disconnect();
   Serial.print("Cooling down to prevent peripheral reconnection---");
   setPairMode(true);
   lastEventTime = millis();
