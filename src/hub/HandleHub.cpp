@@ -36,6 +36,8 @@ BLEIntCharacteristic battLevelChar(BATTERY_LEVEL_CHARACTERISTIC_UUID, BLERead | 
 
 char deviceImei[20]{};
 
+const unsigned long BATT_UPDATE_INTERVAL = 30 * 60 * 1000;
+
 BLEDevice* peripheral;
 bool isAdvertising = false;
 bool isAddingNewSensor = false;
@@ -114,7 +116,6 @@ void onBLEConnected(BLEDevice d) {
   if (!network.setPowerOnAndWaitForReg(&BLE)) return;
   BLE.poll(); // helps recover from starting up
 
-  Serial.println("\n### setPowerOn and waited, proceeding to network req ###");
   char loginMutationStr[100 + strlen(command.value) + strlen(deviceImei)]{};
   sprintf(loginMutationStr, "{\"query\":\"mutation loginAsHub{loginAsHub(userId:%s, serial:\\\"%s\\\", imei:\\\"%s\\\")}\",\"variables\":{}}", command.value, BLE.address().c_str(), deviceImei);
   DynamicJsonDocument loginDoc = network.SendRequest(loginMutationStr, &BLE);
@@ -655,7 +656,6 @@ void UpdateGPS() {
       location.setGPSPower(true);
     }
     return;
-    return;
   }
   location.lastGPSTime = millis();
   Serial1.println("AT+CGNSINF");
@@ -733,7 +733,7 @@ void loop() {
   // Update GPS
   if (!phone && !peripheral && pairingStartTime == 0) {
     UpdateGPS();
-    if (millis() > lastBatteryUpdateTime + (4 * 60 * 1000)) {
+    if (millis() > lastBatteryUpdateTime + BATT_UPDATE_INTERVAL) {
       UpdateBatteryLevel();
     }
   }

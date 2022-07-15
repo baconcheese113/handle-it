@@ -146,16 +146,16 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
     Serial.println(error.f_str());
   } else {
     Utilities::analogWriteRGB(0, 25, 0);
-  }
-  char substr[10];
-  memcpy(substr, response, 10);
-  substr[9] = '\0';
-  if (strcmp(substr, "{\"errors\"") == 0) {
-    Serial.println("Graph Failure: Clearing accessToken");
-    memset(tokenData.accessToken, 0, 100);
-    tokenData.isValid = false;
-    flashTokenData.write(tokenData);
-    Serial.println("accessToken cleared");
+    if(doc["errors"] && doc["errors"][0]["extensions"]["code"]) {
+      // TODO clear knownSensorAddrs
+      if(strcmp(doc["errors"][0]["extensions"]["code"], "UNAUTHENTICATED") == 0) {
+        Serial.println("Unauthenticated: Clearing accessToken");
+        memset(tokenData.accessToken, 0, 100);
+        tokenData.isValid = false;
+        flashTokenData.write(tokenData);
+        Serial.println("accessToken cleared");
+      }
+    }
   }
   return doc;
 }
@@ -332,13 +332,13 @@ bool Network::setPowerOnAndWaitForReg(BLELocalDevice* BLE) {
     return false;
   }
   int8_t regStatus = -1;
-  while (true) {
+  while (millis() < startTime + 15000) {
     regStatus = getRegStatus(BLE);
     if (regStatus == 5 || regStatus == 1) break;
     if (BLE) Utilities::bleDelay(50, BLE);
     else delay(50);
   }
-  if (regStatus == -1) {
+  if (regStatus != 5 && regStatus != 1) {
     setPower(false);
     return false;
   }

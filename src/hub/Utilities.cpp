@@ -24,7 +24,7 @@ namespace Utilities {
       Serial.print(", ");
       Serial.println(b);
     }
-    int divisor = 1;
+    int divisor = 10;
     analogWrite(RGB_R, r / divisor);
     analogWrite(RGB_G, g / divisor);
     analogWrite(RGB_B, b / divisor);
