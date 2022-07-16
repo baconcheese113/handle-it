@@ -220,11 +220,11 @@ bool initializeBLE() {
 
 void setup() {
   Utilities::setupPins();
-
-  Utilities::analogWriteRGB(0, 0, 0);
   Serial.begin(115200);
   while (!Serial);
   Serial.println("Booting...");
+  Utilities::happyDance();
+  Utilities::analogWriteRGB(0, 0, 0);
   Serial1.begin(115200);
   while (!Serial1);
   Serial.println("Serial1 started at 115200 baud");

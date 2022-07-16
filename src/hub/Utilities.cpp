@@ -25,10 +25,31 @@ namespace Utilities {
       Serial.print(", ");
       Serial.println(b);
     }
-    int divisor = 10;
+    int divisor = 5;
     analogWrite(RGB_R, r / divisor);
     analogWrite(RGB_G, g / divisor);
     analogWrite(RGB_B, b / divisor);
+  }
+
+  void happyDance() {
+    uint8_t red, green, blue;
+    for (uint16_t angle = 0; angle < 360; angle++) {
+      if (angle < 60) {
+        red = 255; green = round(angle * 4.25 - 0.01); blue = 0;
+      } else if (angle < 120) {
+        red = round((120 - angle) * 4.25 - 0.01); green = 255; blue = 0;
+      } else if (angle < 180) {
+        red = 0, green = 255; blue = round((angle - 120) * 4.25 - 0.01);
+      } else if (angle < 240) {
+        red = 0, green = round((240 - angle) * 4.25 - 0.01); blue = 255;
+      } else if (angle < 300) {
+        red = round((angle - 240) * 4.25 - 0.01), green = 0; blue = 255;
+      } else {
+        red = 255, green = 0; blue = round((360 - angle) * 4.25 - 0.01);
+      }
+      analogWriteRGB(red, green, blue, false);
+      delay(2);
+    }
   }
 
   Command parseRawCommand(char* rawCmd) {

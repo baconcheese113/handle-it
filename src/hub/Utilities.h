@@ -32,6 +32,7 @@ namespace Utilities {
   **/
   void analogWriteRGB(uint8_t r, uint8_t g, uint8_t b, bool print = true);
 
+  void happyDance();
   /**
    * Parses BLE char arrays separated by a colon ( : ) delimeter into a Command struct
    * Prints an error message if unable to parse
