@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoLowPower.h>
+#include <utility/HCI.h>
 #include <./hub/Utilities.h>
 
 namespace Utilities {
@@ -139,5 +140,22 @@ namespace Utilities {
       else Serial.print(" ");
     }
     Serial.println("\n===== End Bytes =======");
+  }
+
+  bool setBlePower(bool on) {
+    if (on) {
+      Serial.println("BLE trying to power up...");
+      digitalWrite(NINA_RESETN, HIGH);
+      delay(750);
+      if (!HCI.begin()) return false;
+      if (HCI.reset() != 0) return false;
+      if (HCI.setEventMask(0x3FFFFFFFFFFFFFFF) != 0) return false;
+      if (HCI.setLeEventMask(0x00000000000003FF) != 0) return false;
+      Serial.println("BLE On!");
+    } else {
+      digitalWrite(NINA_RESETN, LOW);
+      Serial.println("BLE powered down");
+    }
+    return true;
   }
 }

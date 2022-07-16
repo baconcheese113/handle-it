@@ -36,16 +36,21 @@ BLEIntCharacteristic battLevelChar(BATTERY_LEVEL_CHARACTERISTIC_UUID, BLERead | 
 
 char deviceImei[20]{};
 
+const unsigned long BLE_ADV_DURATION = 60 * 1000;
+const unsigned long BLE_SCAN_INTERVAL = 10 * 1000;
+const unsigned long BLE_SCAN_DURATION = 1 * 1000;
+const unsigned long BLE_COOLDOWN = 20 * 1000;
+
 const unsigned long BATT_UPDATE_INTERVAL = 30 * 60 * 1000;
 
 BLEDevice* peripheral;
-bool isAdvertising = false;
 bool isAddingNewSensor = false;
-unsigned long scanStartTime = 0;
+bool isScanning = false;
+unsigned long lastScanTime = 0;
 unsigned long lastEventTime = 0;
 unsigned long lastBatteryUpdateTime = 0;
 
-unsigned long pairingStartTime = 0;
+unsigned long advStartTime = 0;
 unsigned long pairButtonHoldStartTime = 0;
 BLEDevice* phone;
 
@@ -59,14 +64,15 @@ String knownSensorAddrs[10];
 uint8_t knownSensorAddrsLen = 0;
 int32_t lastReadVoltage = 0;
 
-void setPairMode(bool turnOn) {
-  if (turnOn && !isAdvertising) {
+void setAdvMode(bool turnOn) {
+  if (turnOn && advStartTime == 0) {
+    if (!isScanning) Utilities::setBlePower(true);
+    Serial.println("Now advertising");
     BLE.advertise();
-    isAdvertising = true;
   } else if (!turnOn) {
-    pairingStartTime = 0;
+    advStartTime = 0;
     BLE.stopAdvertise();
-    isAdvertising = false;
+    Serial.println("Stopped advertising");
   }
 }
 
@@ -77,7 +83,7 @@ void onBLEConnected(BLEDevice d) {
   // d not populated with localName for some reason
   bool dNameMatch = peripheral && peripheral->address().compareTo(d.address()) == 0;
 
-  setPairMode(false);
+  setAdvMode(false);
   if (dNameMatch) {
     // if we just connectd to a peripheral then there's nothing else to do
     Serial.println("Connected to a sensor");
@@ -152,7 +158,7 @@ void onBLEConnected(BLEDevice d) {
     Serial.println(hubCommand);
     commandChar.writeValue(hubCommand);
     Utilities::bleDelay(5000, &BLE);
-    setPairMode(false);
+    setAdvMode(false);
   } else {
     Serial.println("Error getting hubId");
   }
@@ -162,11 +168,11 @@ void onBLEConnected(BLEDevice d) {
 void onBLEDisconnected(BLEDevice d) {
   Serial.print("\n>>> BLEDisconnecting from: ");
   Serial.println(d.address());
-  if(phone) {
+  if (phone) {
     Serial.print("Phone address: ");
     Serial.println(phone->address());
   }
-  if(peripheral) {
+  if (peripheral) {
     Serial.print("Peripheral address: ");
     Serial.println(peripheral->address());
   }
@@ -286,23 +292,23 @@ void CheckInput() {
     pairButtonHoldStartTime = 0;
     return;
   }
-  if (isAdvertising) return;
+  if (advStartTime > 0) return;
 
   if (pairButtonHoldStartTime == 0) {
     pairButtonHoldStartTime = millis();
   } else if (millis() > pairButtonHoldStartTime + 3000) {
     // enter pair mode
-    pairingStartTime = millis();
-    setPairMode(true);
+    setAdvMode(true);
+    advStartTime = millis();
     // Warm up SIM module
     network.setPower(true);
   }
 }
 
 void PairToPhone() {
-  if (millis() > pairingStartTime + 60000) {
+  if (millis() > advStartTime + BLE_ADV_DURATION) {
     // pairing timed out
-    setPairMode(false);
+    setAdvMode(false);
     network.setPower(false);
     Utilities::analogWriteRGB(255, 0, 0);
     return;
@@ -392,29 +398,37 @@ void UpdateBatteryLevel() {
 }
 
 void ScanForSensor() {
-  if (pairingStartTime > 0) return;
+  // FIXME need to advertise during cooldown, so this check should be different
+  if (advStartTime > 0) return;
   if (lastEventTime > 0) {
-    if (millis() < lastEventTime + 20000) {
+    if (millis() < lastEventTime + BLE_COOLDOWN) {
       Serial.print("-");
+      BLE.poll();
     } else {
       lastEventTime = 0;
-      setPairMode(false);
+      setAdvMode(false);
+      Utilities::setBlePower(false);
       Serial.println(">\nCooldown complete");
     }
     return;
   }
-  if (scanStartTime == 0) {
+  if (!isScanning && (millis() > lastScanTime + BLE_SCAN_INTERVAL || lastScanTime == 0)) {
     // this was the first call to start scanning
+    if (!phone) Utilities::setBlePower(true);
     BLE.scanForName(PERIPHERAL_NAME, true);
-    scanStartTime = millis();
-    Utilities::analogWriteRGB(255, 0, 0);
+    lastScanTime = millis();
+    isScanning = true;
+    Utilities::analogWriteRGB(255, 0, 0, false);
     Serial.print("Hub scanning for peripheral...");
-  } else if (millis() >= scanStartTime + 90000) {
-    Serial.println("\nScan for peripheral timed out, restarting");
+  } else if (!phone && isScanning && millis() > lastScanTime + BLE_SCAN_DURATION) {
+    Serial.println("😴💤");
     BLE.stopScan();
-    scanStartTime = 0;
-    return;
+    Utilities::setBlePower(false);
+    Utilities::analogWriteRGB(0, 0, 0, false);
+    isScanning = false;
   }
+  if (!isScanning) return;
+
   BLEDevice scannedDevice = BLE.available();
   if (scannedDevice.hasLocalName()) {
     Serial.print("Scanned: (localName) ");
@@ -466,7 +480,7 @@ void ScanForSensor() {
   Serial.print("Advertised Service UUID Count: ");
   Serial.println(peripheral->advertisedServiceUuidCount());
   BLE.stopScan();
-  scanStartTime = 0;
+  isScanning = false;
 
   if (isAddingNewSensor) {
     Serial.print("Waiting for command to connect~~~");
@@ -515,7 +529,6 @@ void ConnectToFoundSensor() {
     peripheral->disconnect();
     return;
   }
-  BLE.poll();
 
   const char* sensorSerial = peripheral->address().c_str();
   char mutationStr[155 + strlen(sensorSerial)]{};
@@ -535,8 +548,9 @@ void ConnectToFoundSensor() {
       Utilities::bleDelay(2000, &BLE);
     }
     Serial.print("Cooling down to prevent peripheral reconnection---");
-    setPairMode(false);
+    setAdvMode(false);
     lastEventTime = millis();
+    lastScanTime = lastEventTime + BLE_COOLDOWN;
   } else {
     Serial.println("doc not valid");
   }
@@ -575,6 +589,8 @@ void MonitorSensor() {
   BLE.poll();
   const char* address = peripheral->address().c_str();
   char createEvent[100 + strlen(address)]{};
+  // FIXME phone not seeing hub after event
+  setAdvMode(true);
   sprintf(createEvent, "{\"query\":\"mutation CreateEvent{createEvent(serial:\\\"%s\\\"){ id }}\",\"variables\":{}}\n", address);
   DynamicJsonDocument doc = network.SendRequest(createEvent, &BLE);
   if (doc["data"] && doc["data"]["createEvent"]) {
@@ -586,10 +602,10 @@ void MonitorSensor() {
     Serial.println("error parsing doc");
   }
   network.setPower(false);
-  if(peripheral) peripheral->disconnect();
+  if (peripheral) peripheral->disconnect();
   Serial.print("Cooling down to prevent peripheral reconnection---");
-  setPairMode(true);
   lastEventTime = millis();
+  lastScanTime = lastEventTime + BLE_COOLDOWN;
   // } 
   // else {
   //   Serial.println("Unable to read volts");
@@ -732,7 +748,7 @@ void loop() {
   }
 
   // Hub has entered pairing mode
-  if (pairingStartTime > 0) {
+  if (advStartTime > 0) {
     PairToPhone();
   } else if (phone) {
     ListenForPhoneCommands();
@@ -748,12 +764,18 @@ void loop() {
   }
 
   // Update GPS
-  if (!phone && !peripheral && pairingStartTime == 0) {
+  if (!phone && !peripheral && advStartTime == 0) {
     UpdateGPS();
-    if (millis() > lastBatteryUpdateTime + BATT_UPDATE_INTERVAL) {
+    if (lastBatteryUpdateTime == 0 || millis() > lastBatteryUpdateTime + BATT_UPDATE_INTERVAL) {
       UpdateBatteryLevel();
     }
   }
 
-  Utilities::idle(200);
+  if (isScanning) {
+    if (Serial) Utilities::idle(20);
+    else Utilities::idle(5);
+  } else {
+    if (Serial) Utilities::idle(200);
+    else Utilities::idle(300);
+  }
 }

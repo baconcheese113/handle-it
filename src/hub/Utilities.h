@@ -63,6 +63,12 @@ namespace Utilities {
    * Prints a char array as bytes up to the termination character
   **/
   void printBytes(char* buffer);
+
+  /**
+   * Power on or off the NINA module in the Arduino
+   * Returs false if there was an error
+   */
+  bool setBlePower(bool on);
 }
 
 #endif
