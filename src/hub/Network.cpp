@@ -332,7 +332,7 @@ bool Network::setPowerOnAndWaitForReg(BLELocalDevice* BLE) {
     return false;
   }
   int8_t regStatus = -1;
-  while (millis() < startTime + 15000) {
+  while (millis() < startTime + 30000) {
     regStatus = getRegStatus(BLE);
     if (regStatus == 5 || regStatus == 1) break;
     if (BLE) Utilities::bleDelay(50, BLE);

@@ -165,7 +165,7 @@ namespace Utilities {
 
   bool setBlePower(bool on) {
     if (on) {
-      Serial.println("BLE trying to power up...");
+      Serial.print("BLE trying to power up...");
       digitalWrite(NINA_RESETN, HIGH);
       delay(750);
       if (!HCI.begin()) return false;

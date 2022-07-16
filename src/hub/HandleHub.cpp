@@ -548,13 +548,13 @@ void ConnectToFoundSensor() {
       Utilities::bleDelay(2000, &BLE);
     }
     Serial.print("Cooling down to prevent peripheral reconnection---");
-    setAdvMode(false);
     lastEventTime = millis();
     lastScanTime = lastEventTime + BLE_COOLDOWN;
   } else {
     Serial.println("doc not valid");
   }
 
+  setAdvMode(false);
   network.setPower(false);
   memset(currentCommand.type, 0, sizeof currentCommand.type);
   memset(currentCommand.value, 0, sizeof currentCommand.value);
@@ -589,8 +589,6 @@ void MonitorSensor() {
   BLE.poll();
   const char* address = peripheral->address().c_str();
   char createEvent[100 + strlen(address)]{};
-  // FIXME phone not seeing hub after event
-  setAdvMode(true);
   sprintf(createEvent, "{\"query\":\"mutation CreateEvent{createEvent(serial:\\\"%s\\\"){ id }}\",\"variables\":{}}\n", address);
   DynamicJsonDocument doc = network.SendRequest(createEvent, &BLE);
   if (doc["data"] && doc["data"]["createEvent"]) {
@@ -602,7 +600,8 @@ void MonitorSensor() {
     Serial.println("error parsing doc");
   }
   network.setPower(false);
-  if (peripheral) peripheral->disconnect();
+  peripheral->disconnect();
+  setAdvMode(true);
   Serial.print("Cooling down to prevent peripheral reconnection---");
   lastEventTime = millis();
   lastScanTime = lastEventTime + BLE_COOLDOWN;
