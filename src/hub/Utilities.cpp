@@ -167,7 +167,7 @@ namespace Utilities {
     if (on) {
       Serial.print("BLE trying to power up...");
       digitalWrite(NINA_RESETN, HIGH);
-      delay(750);
+      Utilities::idle(750);
       if (!HCI.begin()) return false;
       if (HCI.reset() != 0) return false;
       if (HCI.setEventMask(0x3FFFFFFFFFFFFFFF) != 0) return false;
