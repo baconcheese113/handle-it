@@ -66,95 +66,104 @@ DynamicJsonDocument Network::SendRequest(char* query, BLELocalDevice* BLE) {
   int size;
   unsigned int commandsLen = sizeof commands / sizeof * commands;
   unsigned long timeout;
+  DynamicJsonDocument doc(RESPONSE_SIZE);
   Serial.print("Commands to iterate through: ");
   Serial.println(commandsLen);
-  for (uint8_t i = 0; i < commandsLen; i++) {
-    // Required so that services can be read for some reason
-    // FIXME - https://github.com/arduino-libraries/ArduinoBLE/issues/175
-    // https://github.com/arduino-libraries/ArduinoBLE/issues/236
-    BLE->poll();
-    memset(buffer, 0, RESPONSE_SIZE);
-    size = 0;
+  for (uint8_t attempt = 0; attempt < 3; attempt++) {
+    for (uint8_t i = 0; i < commandsLen; i++) {
+      // Required so that services can be read for some reason
+      // FIXME - https://github.com/arduino-libraries/ArduinoBLE/issues/175
+      // https://github.com/arduino-libraries/ArduinoBLE/issues/236
+      BLE->poll();
+      memset(buffer, 0, RESPONSE_SIZE);
+      size = 0;
 
-    Serial1.println(commands[i]);
-    Serial1.flush();
-    timeout = millis() + 1200;
-    if (i == AT_HTTPDATA_IDX) { // send query to HTTPDATA command
-      char str[40]{};
-      uint8_t len = 0;
+      Serial1.println(commands[i]);
+      Serial1.flush();
+      timeout = millis() + 1200;
+      if (i == AT_HTTPDATA_IDX) { // send query to HTTPDATA command
+        char str[40]{};
+        uint8_t len = 0;
+        while (millis() < timeout) {
+          if (Serial1.available()) {
+            str[len++] = Serial1.read();
+            if (len >= 30) {
+              str[len] = '\0';
+              if (strcmp(str + (len - 10), "DOWNLOAD\r\n") == 0) break;
+            }
+          }
+        }
+        Serial.println(str);
+        Utilities::bleDelay(900, BLE); // receive NO CARRIER response without waiting this amount
+        Serial1.write(query);
+        Serial1.flush();
+      }
+      timeout = millis() + 5000;
       while (millis() < timeout) {
         if (Serial1.available()) {
-          str[len++] = Serial1.read();
-          if (len >= 30) {
-            str[len] = '\0';
-            if (strcmp(str + (len - 10), "DOWNLOAD\r\n") == 0) break;
+          BLE->poll();
+          buffer[size] = Serial1.read();
+          Serial.write(buffer[size]);
+          size++;
+          if (size >= 6
+            && buffer[size - 1] == 10
+            && buffer[size - 2] == 13
+            && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K' // OK
+            ) {
+            if (i == AT_HTTPACTION_IDX) { // special case for AT+HTTPACTION response responding OK before query resolve :/
+              while (Serial1.available() < 1 && millis() < timeout) { BLE->poll(); }
+              while (Serial1.available() > 0 && millis() < timeout) {
+                BLE->poll();
+                buffer[size] = Serial1.read();
+                Serial.write(buffer[size]);
+                size++;
+              }
+            }
+            buffer[size] = '\0';
+            if (i == AT_HTTPREAD_IDX) { // special case for AT+HTTPREAD to extract the response
+              int16_t responseIdxStart = -1;
+              for (int idx = 0; idx < size - 7; idx++) {
+                BLE->poll();
+                if (responseIdxStart == -1 && buffer[idx] == '{') responseIdxStart = idx;
+                if (responseIdxStart > -1) response[idx - responseIdxStart] = buffer[idx];
+                if (responseIdxStart > -1 && idx == size - 8) response[idx - responseIdxStart + 1] = '\0';
+              }
+            }
+            break;
           }
         }
       }
-      Serial.println(str);
-      Utilities::bleDelay(900, BLE); // receive NO CARRIER response without waiting this amount
-      Serial1.write(query);
-      Serial1.flush();
-    }
-    timeout = millis() + 5000;
-    while (millis() < timeout) {
-      if (Serial1.available()) {
-        BLE->poll();
-        buffer[size] = Serial1.read();
-        Serial.write(buffer[size]);
-        size++;
-        if (size >= 6
-          && buffer[size - 1] == 10
-          && buffer[size - 2] == 13
-          && buffer[size - 5] == 10 && buffer[size - 4] == 'O' && buffer[size - 3] == 'K' // OK
-          ) {
-          if (i == AT_HTTPACTION_IDX) { // special case for AT+HTTPACTION response responding OK before query resolve :/
-            while (Serial1.available() < 1 && millis() < timeout) { BLE->poll(); }
-            while (Serial1.available() > 0 && millis() < timeout) {
-              BLE->poll();
-              buffer[size] = Serial1.read();
-              Serial.write(buffer[size]);
-              size++;
-            }
-          }
-          buffer[size] = '\0';
-          if (i == AT_HTTPREAD_IDX) { // special case for AT+HTTPREAD to extract the response
-            int16_t responseIdxStart = -1;
-            for (int idx = 0; idx < size - 7; idx++) {
-              BLE->poll();
-              if (responseIdxStart == -1 && buffer[idx] == '{') responseIdxStart = idx;
-              if (responseIdxStart > -1) response[idx - responseIdxStart] = buffer[idx];
-              if (responseIdxStart > -1 && idx == size - 8) response[idx - responseIdxStart + 1] = '\0';
-            }
-          }
-          break;
-        }
+      if (millis() >= timeout) {
+        Utilities::analogWriteRGB(70, 5, 0);
+        Serial.println(">>Network Request Timeout<<");
       }
     }
-    if (millis() >= timeout) {
-      Utilities::analogWriteRGB(70, 5, 0);
-      Serial.println(">>Network Request Timeout<<");
-    }
-  }
-  Serial.print("Request complete\nResponse is: ");
-  Serial.println(response);
+    Serial.print("Request complete\nResponse is: ");
+    Serial.println(response);
 
-  DynamicJsonDocument doc(RESPONSE_SIZE);
-  DeserializationError error = deserializeJson(doc, (const char*)response);
-  if (error) {
-    Serial.print("deserializeJson() failed: ");
-    Serial.println(error.f_str());
-  } else {
-    Utilities::analogWriteRGB(0, 25, 0);
-    if(doc["errors"] && doc["errors"][0]["extensions"]["code"]) {
-      // TODO clear knownSensorAddrs
-      if(strcmp(doc["errors"][0]["extensions"]["code"], "UNAUTHENTICATED") == 0) {
-        Serial.println("Unauthenticated: Clearing accessToken");
-        memset(tokenData.accessToken, 0, 100);
-        tokenData.isValid = false;
-        flashTokenData.write(tokenData);
-        Serial.println("accessToken cleared");
+    DeserializationError error = deserializeJson(doc, (const char*)response);
+    if (error) {
+      Serial.print("deserializeJson() failed: ");
+      Serial.println(error.f_str());
+      if(attempt < 2) {
+        Serial.print("Retrying. Attempt ");
+        Serial.println(attempt + 2);
+      } else {
+        Serial.println("All attempts failed");
       }
+    } else {
+      Utilities::analogWriteRGB(0, 25, 0);
+      if(doc["errors"] && doc["errors"][0]["extensions"]["code"]) {
+        // TODO clear knownSensorAddrs
+        if(strcmp(doc["errors"][0]["extensions"]["code"], "UNAUTHENTICATED") == 0) {
+          Serial.println("Unauthenticated: Clearing accessToken");
+          memset(tokenData.accessToken, 0, 100);
+          tokenData.isValid = false;
+          flashTokenData.write(tokenData);
+          Serial.println("accessToken cleared");
+        }
+      }
+      break;
     }
   }
   return doc;
