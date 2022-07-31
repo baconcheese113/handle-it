@@ -1,7 +1,7 @@
 #include <ArduinoBLE.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
-#include <ArduinoLowPower.h>
+#include <RTCZero.h>
 #include <./hub/Utilities.h>
 #include <./hub/Network.h>
 #include <./hub/Location.h>
@@ -63,6 +63,12 @@ String lastReadCommand = "";
 String knownSensorAddrs[10];
 uint8_t knownSensorAddrsLen = 0;
 int32_t lastReadVoltage = 0;
+
+RTCZero rtc;
+
+uint32_t epochMillis() {
+  return rtc.getEpoch() * 1000;
+}
 
 void setAdvMode(bool turnOn) {
   if (turnOn && advStartTime == 0) {
@@ -220,6 +226,7 @@ bool initializeBLE() {
 
 void setup() {
   Utilities::setupPins();
+  rtc.begin(true);
   Serial.begin(115200);
   while (!Serial);
   Serial.println("Booting...");
@@ -229,6 +236,16 @@ void setup() {
   while (!Serial1);
   Serial.println("Serial1 started at 115200 baud");
   while (Serial1.available()) Serial1.read();
+
+  // while (true)
+  // {
+  //   while(Serial.available()) {
+  //     Serial1.write(Serial.read());
+  //   }
+  //   while(Serial1.available()) {
+  //     Serial.write(Serial1.read());
+  //   }
+  // }
 
   // while(true) {
   //   if(Serial.available()) {
@@ -295,25 +312,25 @@ void CheckInput() {
   if (advStartTime > 0) return;
 
   if (pairButtonHoldStartTime == 0) {
-    pairButtonHoldStartTime = millis();
-  } else if (millis() > pairButtonHoldStartTime + 3000) {
+    pairButtonHoldStartTime = epochMillis();
+  } else if (epochMillis() > pairButtonHoldStartTime + 3000) {
     // enter pair mode
     setAdvMode(true);
-    advStartTime = millis();
+    advStartTime = epochMillis();
     // Warm up SIM module
     network.setPower(true);
   }
 }
 
 void PairToPhone() {
-  if (millis() > advStartTime + BLE_ADV_DURATION) {
+  if (epochMillis() > advStartTime + BLE_ADV_DURATION) {
     // pairing timed out
     setAdvMode(false);
     network.setPower(false);
     Utilities::analogWriteRGB(255, 0, 0);
     return;
   }
-  if (millis() / 1000 % 2) Utilities::analogWriteRGB(75, 0, 130);
+  if (epochMillis() / 1000 % 2) Utilities::analogWriteRGB(75, 0, 130);
   else Utilities::analogWriteRGB(75, 0, 80);
 
   // Must be called while pairing so characteristics are available
@@ -371,7 +388,7 @@ void UpdateBatteryLevel() {
   uint8_t sampleSize = 90;
   for (uint8_t i = 0; i < sampleSize; i++) {
     avgVoltage += analogRead(BATT_PIN);
-    if (i % 5 == 0) delay(1);
+    // if (i % 5 == 0) delay(1);
   }
   avgVoltage /= sampleSize;
   double level = getBatteryLevel(avgVoltage);
@@ -381,7 +398,7 @@ void UpdateBatteryLevel() {
   Serial.println(level);
   battLevelChar.writeValue((uint8_t)round(level));
 
-  lastBatteryUpdateTime = millis();
+  lastBatteryUpdateTime = epochMillis();
   if (!network.tokenData.isValid || !network.setPowerOnAndWaitForReg()) return;
 
   char updateHubBatteryLevel[150]{};
@@ -401,7 +418,7 @@ void ScanForSensor() {
   // FIXME need to advertise during cooldown, so this check should be different
   if (advStartTime > 0) return;
   if (lastEventTime > 0) {
-    if (millis() < lastEventTime + BLE_COOLDOWN) {
+    if (epochMillis() < lastEventTime + BLE_COOLDOWN) {
       Serial.print("-");
       BLE.poll();
     } else {
@@ -412,15 +429,15 @@ void ScanForSensor() {
     }
     return;
   }
-  if (!isScanning && (millis() > lastScanTime + BLE_SCAN_INTERVAL || lastScanTime == 0)) {
+  if (!isScanning && (epochMillis() > lastScanTime + BLE_SCAN_INTERVAL || lastScanTime == 0)) {
     // this was the first call to start scanning
     if (!phone) Utilities::setBlePower(true);
     BLE.scanForName(PERIPHERAL_NAME, true);
-    lastScanTime = millis();
+    lastScanTime = epochMillis();
     isScanning = true;
     Utilities::analogWriteRGB(255, 0, 0, false);
     Serial.print("Hub scanning for peripheral...");
-  } else if (!phone && isScanning && millis() > lastScanTime + BLE_SCAN_DURATION) {
+  } else if (!phone && isScanning && epochMillis() > lastScanTime + BLE_SCAN_DURATION) {
     Serial.println("😴💤");
     BLE.stopScan();
     Utilities::setBlePower(false);
@@ -548,7 +565,7 @@ void ConnectToFoundSensor() {
       Utilities::bleDelay(2000, &BLE);
     }
     Serial.print("Cooling down to prevent peripheral reconnection---");
-    lastEventTime = millis();
+    lastEventTime = epochMillis();
     lastScanTime = lastEventTime + BLE_COOLDOWN;
   } else {
     Serial.println("doc not valid");
@@ -603,7 +620,7 @@ void MonitorSensor() {
   peripheral->disconnect();
   setAdvMode(true);
   Serial.print("Cooling down to prevent peripheral reconnection---");
-  lastEventTime = millis();
+  lastEventTime = epochMillis();
   lastScanTime = lastEventTime + BLE_COOLDOWN;
   // } 
   // else {
@@ -680,8 +697,8 @@ void FirmwareUpdate() {
 
 void UpdateGPS() {
   if (!network.tokenData.isValid) return;
-  if (millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL) return;
-  if (millis() < location.lastGPSTime + GPS_UPDATE_INTERVAL + GPS_BUFFER_TIME) {
+  if (epochMillis() < location.lastGPSTime + GPS_UPDATE_INTERVAL) return;
+  if (epochMillis() < location.lastGPSTime + GPS_UPDATE_INTERVAL + GPS_BUFFER_TIME) {
     if (!location.isPowered) {
       network.setPower(true);
       network.waitForPowerOn();
@@ -689,7 +706,7 @@ void UpdateGPS() {
     }
     return;
   }
-  location.lastGPSTime = millis();
+  location.lastGPSTime = epochMillis();
   Serial1.println("AT+CGNSINF");
   Serial1.flush();
 
@@ -765,16 +782,20 @@ void loop() {
   // Update GPS
   if (!phone && !peripheral && advStartTime == 0) {
     UpdateGPS();
-    if (lastBatteryUpdateTime == 0 || millis() > lastBatteryUpdateTime + BATT_UPDATE_INTERVAL) {
+    if (lastBatteryUpdateTime == 0 || epochMillis() > lastBatteryUpdateTime + BATT_UPDATE_INTERVAL) {
       UpdateBatteryLevel();
     }
   }
 
-  if (isScanning) {
+  if (isScanning || advStartTime > 0 || pairButtonHoldStartTime || phone || peripheral) {
     if (Serial) Utilities::idle(20);
     else Utilities::idle(5);
   } else {
     if (Serial) Utilities::idle(200);
-    else Utilities::idle(300);
+    else {
+      rtc.setAlarmEpoch(rtc.getEpoch() + 10);
+      rtc.enableAlarm(rtc.MATCH_SS);
+      rtc.standbyMode();
+    }
   }
 }
